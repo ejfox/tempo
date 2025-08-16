@@ -1,9 +1,29 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="1" systemVersion="11A491" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithCloudKit="true" userDefinedModelVersionIdentifier="">
-    <entity name="Item" representedClassName="Item" syncable="YES" codeGenerationType="class">
-        <attribute name="timestamp" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+    <entity name="TempoSession" representedClassName="TempoSession" syncable="YES" codeGenerationType="class">
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="workDuration" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <attribute name="breakDuration" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <attribute name="startTime" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="endTime" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="state" attributeType="String" defaultValueString="idle"/>
+        <attribute name="sessionType" attributeType="String" defaultValueString="short"/>
+        <attribute name="isCompleted" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="deviceID" optional="YES" attributeType="String"/>
+        <attribute name="interruptionMode" attributeType="String" defaultValueString="strict"/>
+        <attribute name="lastSyncTime" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+    </entity>
+    <entity name="UserStats" representedClassName="UserStats" syncable="YES" codeGenerationType="class">
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="currentStreak" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="longestStreak" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="totalSessions" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="todayCount" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="lastSessionDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="lastResetDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
     <elements>
-        <element name="Item" positionX="-63" positionY="-18" width="128" height="44"/>
+        <element name="TempoSession" positionX="-63" positionY="-18" width="128" height="44"/>
+        <element name="UserStats" positionX="145" positionY="-18" width="128" height="44"/>
     </elements>
 </model>
