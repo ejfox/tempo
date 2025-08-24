@@ -68,24 +68,9 @@ class SessionManager {
     }
     
     private func restoreSessionIfActive() {
-        if let activeSession = persistenceController.getActiveSession() {
-            // Update existing session instead of creating new instance
-            currentSession.updateFromPersistence(activeSession)
-            
-            if case .running = currentSession.state {
-                if currentSession.remainingTime > 0 {
-                    currentSession.resumeSession()
-                } else {
-                    currentSession.completeCurrentPhase()
-                }
-            } else if case .breakTime = currentSession.state {
-                if currentSession.remainingTime > 0 {
-                    currentSession.resumeSession()
-                } else {
-                    finishSession()
-                }
-            }
-        }
+        // In time-based approach, we'll rely on iCloud KV sync for cross-device session restoration
+        // Local persistence is mainly for statistics and history
+        print("🔄 Skipping local session restoration - using iCloud KV sync instead")
     }
     
     // MARK: - Session Control
@@ -166,12 +151,9 @@ class SessionManager {
     private func refreshFromPersistence() {
         refreshUserStats()
         
-        // In time-based approach, we can safely update from persistence
-        // since all devices calculate from the same start time
-        if let activeSession = persistenceController.getActiveSession() {
-            currentSession.updateFromPersistence(activeSession)
-            updateLiveActivity()
-        }
+        // In time-based approach, persistence is mainly for statistics
+        // Active session state comes from iCloud KV sync
+        print("📊 Refreshed user stats from persistence")
     }
     
     private func handleWorkPhaseCompletion() {

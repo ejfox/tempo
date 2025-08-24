@@ -4,17 +4,6 @@ import CloudKit
 import Combine
 import ActivityKit
 
-struct TempoActivityAttributes: ActivityAttributes {
-    public struct ContentState: Codable, Hashable {
-        var remainingTime: TimeInterval
-        var currentStreak: Int
-        var todayCount: Int
-        var isInBreak: Bool
-    }
-    
-    var sessionType: String
-    var totalDuration: TimeInterval
-}
 
 struct SessionSyncInfo: Codable {
     let isActive: Bool
@@ -30,80 +19,36 @@ struct SessionSyncInfo: Codable {
     let lastUpdateTime: Date
 }
 
-// MARK: - User Settings Management
-/// Manages user-customizable timer settings and preferences
-/// Persists to UserDefaults and syncs across devices via NSUbiquitousKeyValueStore
+// MARK: - User Settings
 @Observable
 class UserSettings {
-    // Default Pomodoro intervals (in seconds)
-    var shortWorkDuration: TimeInterval = 25 * 60      // 25 minutes
-    var shortBreakDuration: TimeInterval = 5 * 60      // 5 minutes  
-    var longWorkDuration: TimeInterval = 50 * 60       // 50 minutes
-    var longBreakDuration: TimeInterval = 10 * 60      // 10 minutes
+    var shortWorkDuration: TimeInterval = 25 * 60
+    var shortBreakDuration: TimeInterval = 5 * 60
+    var longWorkDuration: TimeInterval = 50 * 60
+    var longBreakDuration: TimeInterval = 10 * 60
     var interruptionMode: PomodoroSession.InterruptionMode = .strict
+    var minuteHaptics: Bool = false  // Opt-in for minute ticks
     
     private let ubiquitousStore = NSUbiquitousKeyValueStore.default
     
     init() {
         loadSettings()
-        setupSync()
     }
     
     private func loadSettings() {
-        // Load from UserDefaults first, then check iCloud
         shortWorkDuration = UserDefaults.standard.object(forKey: "shortWorkDuration") as? TimeInterval ?? 25 * 60
         shortBreakDuration = UserDefaults.standard.object(forKey: "shortBreakDuration") as? TimeInterval ?? 5 * 60
         longWorkDuration = UserDefaults.standard.object(forKey: "longWorkDuration") as? TimeInterval ?? 50 * 60
         longBreakDuration = UserDefaults.standard.object(forKey: "longBreakDuration") as? TimeInterval ?? 10 * 60
-        
-        if let modeString = UserDefaults.standard.string(forKey: "interruptionMode") {
-            interruptionMode = PomodoroSession.InterruptionMode(rawValue: modeString) ?? .strict
-        }
+        minuteHaptics = UserDefaults.standard.bool(forKey: "minuteHaptics")
     }
     
     func saveSettings() {
-        // Save to UserDefaults
         UserDefaults.standard.set(shortWorkDuration, forKey: "shortWorkDuration")
         UserDefaults.standard.set(shortBreakDuration, forKey: "shortBreakDuration")
         UserDefaults.standard.set(longWorkDuration, forKey: "longWorkDuration")
         UserDefaults.standard.set(longBreakDuration, forKey: "longBreakDuration")
-        UserDefaults.standard.set(interruptionMode.rawValue, forKey: "interruptionMode")
-        
-        // Sync to iCloud
-        ubiquitousStore.set(shortWorkDuration, forKey: "shortWorkDuration")
-        ubiquitousStore.set(shortBreakDuration, forKey: "shortBreakDuration")
-        ubiquitousStore.set(longWorkDuration, forKey: "longWorkDuration")
-        ubiquitousStore.set(longBreakDuration, forKey: "longBreakDuration")
-        ubiquitousStore.set(interruptionMode.rawValue, forKey: "interruptionMode")
-        ubiquitousStore.synchronize()
-    }
-    
-    private func setupSync() {
-        NotificationCenter.default.addObserver(
-            forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
-            object: ubiquitousStore,
-            queue: .main
-        ) { _ in
-            self.syncFromCloud()
-        }
-    }
-    
-    private func syncFromCloud() {
-        if let cloudShortWork = ubiquitousStore.object(forKey: "shortWorkDuration") as? TimeInterval {
-            shortWorkDuration = cloudShortWork
-        }
-        if let cloudShortBreak = ubiquitousStore.object(forKey: "shortBreakDuration") as? TimeInterval {
-            shortBreakDuration = cloudShortBreak
-        }
-        if let cloudLongWork = ubiquitousStore.object(forKey: "longWorkDuration") as? TimeInterval {
-            longWorkDuration = cloudLongWork
-        }
-        if let cloudLongBreak = ubiquitousStore.object(forKey: "longBreakDuration") as? TimeInterval {
-            longBreakDuration = cloudLongBreak
-        }
-        if let cloudModeString = ubiquitousStore.string(forKey: "interruptionMode") {
-            interruptionMode = PomodoroSession.InterruptionMode(rawValue: cloudModeString) ?? .strict
-        }
+        UserDefaults.standard.set(minuteHaptics, forKey: "minuteHaptics")
     }
     
     var shortSessionType: PomodoroSession.SessionType {
@@ -115,46 +60,23 @@ class UserSettings {
     }
 }
 
-// MARK: - Core Timer Logic
-/// PomodoroSession manages the core timer functionality and state transitions
-/// Handles work/break cycles, interruption modes, and background/foreground state
-/// Uses @Observable for SwiftUI reactive updates
+// MARK: - Pomodoro Session
 @Observable
 class PomodoroSession {
     let sessionID = UUID().uuidString.prefix(8)
     
-    // MARK: - Session State Management
-    /// Represents the current state of a Pomodoro session
-    /// Time-based approach: store start time and duration, calculate remaining time dynamically
     enum SessionState: Equatable {
-        case idle                                                               // No active session
-        case running(type: SessionType, startTime: Date, duration: TimeInterval)  // Work phase active
-        case breakTime(startTime: Date, duration: TimeInterval)                // Break phase active  
-        case completed                                                          // Session finished successfully
-        case failed                                                            // Session interrupted/failed
-        
-        static func == (lhs: SessionState, rhs: SessionState) -> Bool {
-            switch (lhs, rhs) {
-            case (.idle, .idle), (.completed, .completed), (.failed, .failed):
-                return true
-            case (.running(let lType, _, _), .running(let rType, _, _)):
-                return lType == rType
-            case (.breakTime, .breakTime):
-                return true
-            default:
-                return false
-            }
-        }
+        case idle
+        case running(type: SessionType, startTime: Date, duration: TimeInterval)
+        case breakTime(startTime: Date, duration: TimeInterval)
+        case completed
+        case failed
     }
     
-    // MARK: - Session Types
-    /// Defines the two core Pomodoro session types with their durations
-    /// Default configurations: 25/5 (focused) and 50/10 (deep work)
     enum SessionType: Equatable {
-        case short(work: TimeInterval, break: TimeInterval)    // 25min work / 5min break
-        case long(work: TimeInterval, break: TimeInterval)     // 50min work / 10min break
+        case short(work: TimeInterval, break: TimeInterval)
+        case long(work: TimeInterval, break: TimeInterval)
         
-        /// Duration of the work phase for this session type
         var workDuration: TimeInterval {
             switch self {
             case .short(let work, _): return work
@@ -162,7 +84,6 @@ class PomodoroSession {
             }
         }
         
-        /// Duration of the break phase for this session type  
         var breakDuration: TimeInterval {
             switch self {
             case .short(_, let breakTime): return breakTime
@@ -171,30 +92,22 @@ class PomodoroSession {
         }
     }
     
-    // MARK: - Interruption Handling
-    /// Defines how the session responds to app backgrounding/interruptions
-    /// Strict mode fails immediately, Practice mode never fails
     enum InterruptionMode: String, CaseIterable {
-        case strict = "strict"      // Fails after 2 seconds in background
-        case focused = "focused"    // Fails after 2 minutes in background  
-        case flexible = "flexible"  // Auto-pauses, can resume same day
-        case practice = "practice"  // Never fails, doesn't count toward streaks
+        case strict = "strict"
+        case focused = "focused"
+        case flexible = "flexible"
+        case practice = "practice"
     }
     
     var state: SessionState = .idle
     var currentStreak: Int = 0
     var todayCount: Int = 0
     var interruptionMode: InterruptionMode = .strict
-    var isBackgrounded: Bool = false
     var lastUpdateTime: Date = Date()
-    
-    private var backgroundTime: Date?
     
     static let defaultShort = SessionType.short(work: 25 * 60, break: 5 * 60)
     static let defaultLong = SessionType.long(work: 50 * 60, break: 10 * 60)
     
-    /// Calculated remaining time based on start time and duration
-    /// This is the single source of truth for timer display
     var remainingTime: TimeInterval {
         switch state {
         case .running(_, let startTime, let duration):
@@ -208,72 +121,43 @@ class PomodoroSession {
         }
     }
     
-    init() {
-        setupBackgroundNotifications()
-    }
-    
-    deinit {
-        NotificationCenter.default.removeObserver(self)
-    }
-    
-    private func setupBackgroundNotifications() {
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.didEnterBackgroundNotification,
-            object: nil,
-            queue: .main
-        ) { _ in
-            self.handleBackground()
-        }
-        
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.willEnterForegroundNotification,
-            object: nil,
-            queue: .main
-        ) { _ in
-            self.handleForeground()
-        }
-    }
-    
     func startSession(type: SessionType) {
-        print("🎯 PomodoroSession[\(sessionID)].startSession called with type: \(type)")
         let now = Date()
         state = .running(type: type, startTime: now, duration: type.workDuration)
         lastUpdateTime = now
-        print("🎯 Session[\(sessionID)] Started at \(now), duration: \(type.workDuration)s")
-        print("🎯 Session[\(sessionID)] Calculated remainingTime: \(remainingTime) seconds")
+        
+        // Starting haptic - confident and ready
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.prepare()
+        impact.impactOccurred(intensity: 0.8)
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            let soft = UIImpactFeedbackGenerator(style: .soft)
+            soft.prepare()
+            soft.impactOccurred(intensity: 0.4)
+        }
+    }
+    
+    func stopSession() {
+        state = .idle
+        lastUpdateTime = Date()
+        
+        // Stopping haptic - gentle warning
+        let notification = UINotificationFeedbackGenerator()
+        notification.prepare()
+        notification.notificationOccurred(.warning)
     }
     
     func pauseSession() {
         // In time-based approach, pause just changes state
-        // UI will stop updating, but time calculation remains accurate
-        print("⏸️ Session[\(sessionID)] Paused")
+        lastUpdateTime = Date()
     }
     
     func resumeSession() {
         // Resume just triggers UI refresh
         lastUpdateTime = Date()
-        print("▶️ Session[\(sessionID)] Resumed")
     }
     
-    func stopSession() {
-        switch state {
-        case .running:
-            state = .failed
-            currentStreak = 0
-        case .breakTime:
-            state = .completed
-            todayCount += 1
-            currentStreak += 1
-        default:
-            break
-        }
-        
-        state = .idle
-        lastUpdateTime = Date()
-        print("🛑 Session[\(sessionID)] Stopped")
-    }
-    
-    /// Check if current phase should complete based on elapsed time
     func checkPhaseCompletion() {
         if remainingTime <= 0 {
             completeCurrentPhase()
@@ -286,118 +170,58 @@ class PomodoroSession {
             let now = Date()
             state = .breakTime(startTime: now, duration: type.breakDuration)
             lastUpdateTime = now
-            triggerVictoryHaptics()
-            NotificationCenter.default.post(name: .workPhaseCompleted, object: nil)
-            print("✅ Work phase completed, starting break: \(type.breakDuration)s")
+            triggerPhaseCompleteHaptics()
             
         case .breakTime:
             state = .completed
             todayCount += 1
             currentStreak += 1
             lastUpdateTime = Date()
-            triggerVictoryHaptics()
-            NotificationCenter.default.post(name: .sessionCompleted, object: nil)
+            triggerSessionCompleteHaptics()
             state = .idle
-            print("🎉 Session completed! Streak: \(currentStreak), Today: \(todayCount)")
             
         default:
             break
         }
     }
     
-    private func handleBackground() {
-        isBackgrounded = true
-        backgroundTime = Date()
-    }
-    
-    private func handleForeground() {
-        isBackgrounded = false
+    private func triggerPhaseCompleteHaptics() {
+        // Work phase done - medium satisfaction
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.prepare()
+        impact.impactOccurred()
         
-        guard let backgroundTime = backgroundTime else { return }
-        let timeAwayInterval = Date().timeIntervalSince(backgroundTime)
-        
-        switch interruptionMode {
-        case .strict:
-            if timeAwayInterval > 2.0 {
-                failSession()
-            }
-        case .focused:
-            if timeAwayInterval > 120.0 {
-                failSession()
-            }
-        case .flexible:
-            break
-        case .practice:
-            break
-        }
-        
-        self.backgroundTime = nil
-        
-        if case .running = state, !isSessionFailed() {
-            // In time-based approach, just check if phase should complete
-            checkPhaseCompletion()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            let notification = UINotificationFeedbackGenerator()
+            notification.prepare()
+            notification.notificationOccurred(.success)
         }
     }
     
-    private func failSession() {
-        state = .failed
-        currentStreak = 0
-        lastUpdateTime = Date()
-        state = .idle
-        print("❌ Session[\(sessionID)] Failed due to interruption")
-    }
-    
-    private func isSessionFailed() -> Bool {
-        if case .failed = state {
-            return true
-        }
-        return false
-    }
-    
-    private func triggerVictoryHaptics() {
-        // 2025 Enhanced Victory Haptic Sequence - Sparks Maximum Joy! 🎉
+    private func triggerSessionCompleteHaptics() {
+        // Full session complete - maximum satisfaction
         let heavy = UIImpactFeedbackGenerator(style: .heavy)
         heavy.prepare()
         heavy.impactOccurred()
         
-        // Success notification early for immediate satisfaction
-        let success = UINotificationFeedbackGenerator()
-        success.prepare()
+        // Success notification
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            success.notificationOccurred(.success)
+            let notification = UINotificationFeedbackGenerator()
+            notification.prepare()
+            notification.notificationOccurred(.success)
         }
         
-        // Cascading medium impacts for rhythm
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            let medium1 = UIImpactFeedbackGenerator(style: .medium)
-            medium1.prepare()
-            medium1.impactOccurred()
+        // Celebratory rhythm
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            let medium = UIImpactFeedbackGenerator(style: .medium)
+            medium.prepare()
+            medium.impactOccurred(intensity: 0.7)
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            let medium2 = UIImpactFeedbackGenerator(style: .medium)
-            medium2.prepare()
-            medium2.impactOccurred()
-        }
-        
-        // Light tap sequence for celebration feel
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            let light1 = UIImpactFeedbackGenerator(style: .light)
-            light1.prepare()
-            light1.impactOccurred()
-        }
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            let light2 = UIImpactFeedbackGenerator(style: .light)
-            light2.prepare()
-            light2.impactOccurred()
-        }
-        
-        // Final success confirmation
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            let finalSuccess = UINotificationFeedbackGenerator()
-            finalSuccess.prepare()
-            finalSuccess.notificationOccurred(.success)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            let light = UIImpactFeedbackGenerator(style: .light)
+            light.prepare()
+            light.impactOccurred(intensity: 0.5)
         }
     }
     
@@ -422,530 +246,455 @@ class PomodoroSession {
         let seconds = Int(remainingTime) % 60
         return String(format: "%02d:%02d", minutes, seconds)
     }
+}
+
+// MARK: - Edge Progress Bar
+struct EdgeProgressBar: View {
+    let progress: Double
+    @State private var displayProgress: Double = 0
+    @Environment(\.colorScheme) private var colorScheme
     
-    func updateFromPersistence(_ tempoSession: TempoSession) {
-        // Update existing session properties instead of creating new instance
-        print("📥 Session[\(sessionID)] Updating from persistence")
-        
-        // Update state based on persistence
-        switch tempoSession.state {
-        case "running":
-            if let startTime = tempoSession.startTime {
-                let sessionType: SessionType = tempoSession.sessionType == "short" 
-                    ? .short(work: tempoSession.workDuration, break: tempoSession.breakDuration)
-                    : .long(work: tempoSession.workDuration, break: tempoSession.breakDuration)
-                state = .running(type: sessionType, startTime: startTime, duration: tempoSession.workDuration)
-            }
-        case "breakTime":
-            if let startTime = tempoSession.startTime {
-                state = .breakTime(startTime: startTime, duration: tempoSession.breakDuration)
-            }
-        case "completed":
-            state = .completed
-        case "failed":
-            state = .failed
-        default:
-            state = .idle
+    private var primaryColor: Color {
+        colorScheme == .dark ? .white : .black
+    }
+    
+    var body: some View {
+        ZStack {
+            // Background track - subtle edge trace
+            ScreenEdgeShape(cornerRadius: UIScreen.main.displayCornerRadius)
+                .stroke(primaryColor.opacity(0.05), lineWidth: 4)
+            
+            // Progress stroke - smooth Swiss watch movement
+            ScreenEdgeShape(cornerRadius: UIScreen.main.displayCornerRadius)
+                .trim(from: 0, to: displayProgress)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            primaryColor.opacity(0.8),
+                            primaryColor.opacity(0.4)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    style: StrokeStyle(
+                        lineWidth: 4,
+                        lineCap: .round,
+                        lineJoin: .round
+                    )
+                )
+                .shadow(color: primaryColor.opacity(0.3), radius: 2)
+                .shadow(color: primaryColor.opacity(0.1), radius: 4)
         }
-        
-        lastUpdateTime = Date()
-        print("📥 Session[\(sessionID)] Updated - state: \(state), remaining: \(remainingTime)")
+        .onAppear {
+            displayProgress = progress
+        }
+        .onChange(of: progress) { oldValue, newValue in
+            withAnimation(.easeInOut(duration: 0.5)) {
+                displayProgress = newValue
+            }
+        }
     }
 }
 
-struct ContentView: View {
-    @Environment(\.colorScheme) var colorScheme
-    @Environment(SessionManager.self) private var sessionManager
-    @State private var isPressed25 = false
-    @State private var isPressed50 = false
-    @State private var confettiTrigger = false
-    @State private var showingSettings = false
-    @State private var userSettings = UserSettings()
-    @State private var displayTime: String = "00:00"
+// MARK: - Screen Edge Shape
+struct ScreenEdgeShape: Shape {
+    let cornerRadius: CGFloat
     
-    // Apple recommended timer approach
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        
+        let padding: CGFloat = 0
+        
+        let innerRect = CGRect(
+            x: padding,
+            y: padding,
+            width: rect.width - (padding * 2),
+            height: rect.height - (padding * 2)
+        )
+        
+        // Begin path from top-center and trace clockwise
+        path.move(to: CGPoint(x: innerRect.midX, y: innerRect.minY))
+        
+        // Top edge
+        path.addLine(to: CGPoint(x: innerRect.maxX - cornerRadius, y: innerRect.minY))
+        
+        // Top-right corner arc
+        path.addArc(
+            center: CGPoint(x: innerRect.maxX - cornerRadius, y: innerRect.minY + cornerRadius),
+            radius: cornerRadius,
+            startAngle: Angle(degrees: -90),
+            endAngle: Angle(degrees: 0),
+            clockwise: false
+        )
+        
+        // Right edge
+        path.addLine(to: CGPoint(x: innerRect.maxX, y: innerRect.maxY - cornerRadius))
+        
+        // Bottom-right corner arc
+        path.addArc(
+            center: CGPoint(x: innerRect.maxX - cornerRadius, y: innerRect.maxY - cornerRadius),
+            radius: cornerRadius,
+            startAngle: Angle(degrees: 0),
+            endAngle: Angle(degrees: 90),
+            clockwise: false
+        )
+        
+        // Bottom edge
+        path.addLine(to: CGPoint(x: innerRect.minX + cornerRadius, y: innerRect.maxY))
+        
+        // Bottom-left corner arc
+        path.addArc(
+            center: CGPoint(x: innerRect.minX + cornerRadius, y: innerRect.maxY - cornerRadius),
+            radius: cornerRadius,
+            startAngle: Angle(degrees: 90),
+            endAngle: Angle(degrees: 180),
+            clockwise: false
+        )
+        
+        // Left edge
+        path.addLine(to: CGPoint(x: innerRect.minX, y: innerRect.minY + cornerRadius))
+        
+        // Top-left corner arc
+        path.addArc(
+            center: CGPoint(x: innerRect.minX + cornerRadius, y: innerRect.minY + cornerRadius),
+            radius: cornerRadius,
+            startAngle: Angle(degrees: 180),
+            endAngle: Angle(degrees: 270),
+            clockwise: false
+        )
+        
+        return path
+    }
+}
+
+// Extension to get display corner radius
+extension UIScreen {
+    var displayCornerRadius: CGFloat {
+        // Get the actual device corner radius
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first else {
+            return 39.0 // Default for modern iPhones
+        }
+        
+        // Use the actual safe area and estimate corner radius
+        let hasNotch = window.safeAreaInsets.top > 20
+        if hasNotch {
+            // Modern devices with notch/Dynamic Island
+            return window.safeAreaInsets.top > 50 ? 55.0 : 39.0
+        } else {
+            // Older devices without notch
+            return 0
+        }
+    }
+}
+
+// MARK: - Content View
+struct ContentView: View {
+    @Environment(SessionManager.self) private var sessionManager
+    @State private var displayTime: String = "00:00"
+    @State private var userSettings = UserSettings()
+    @State private var buttonsVisible = false
+    @State private var button25Scale: CGFloat = 0.8
+    @State private var button50Scale: CGFloat = 0.8
+    @State private var button25Opacity: Double = 0
+    @State private var button50Opacity: Double = 0
+    @State private var statsOpacity: Double = 0
+    @State private var timerScale: CGFloat = 0.9
+    @State private var progressBarWidth: CGFloat = 0
+    @State private var blurRadius: CGFloat = 10
+    @State private var lastMinuteMark: Int = 0
+    
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     
     var body: some View {
         ZStack {
-            (colorScheme == .dark ? Color.black : Color.white)
+            // Glass background
+            Color(UIColor.systemBackground)
+                .overlay(Rectangle().fill(.ultraThinMaterial).opacity(0.3))
                 .ignoresSafeArea()
             
-            if showingSettings {
-                settingsView
-            } else if sessionManager.currentSession.isRunning {
-                runningSessionView
-            } else {
-                idleView
+            // Edge progress bar - only show when running
+            if sessionManager.currentSession.isRunning {
+                EdgeProgressBar(progress: calculateProgress())
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                    .id(displayTime) // Force refresh when time changes
             }
             
-            if confettiTrigger {
-                confettiView
+            VStack(spacing: 60) {
+                Spacer()
+                
+                if sessionManager.currentSession.isRunning {
+                    // Running view with entrance animation
+                    VStack(spacing: 20) {
+                        Text(sessionManager.currentSession.isInBreak ? "break" : "focus")
+                            .font(.system(size: 14, weight: .light, design: .monospaced))
+                            .foregroundColor(.primary.opacity(0.6))
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                        
+                        Text(displayTime)
+                            .font(.system(size: 96, weight: .ultraLight, design: .monospaced))
+                            .foregroundColor(.primary)
+                            .monospacedDigit()
+                            .scaleEffect(timerScale)
+                            .onAppear {
+                                withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                                    timerScale = 1.0
+                                }
+                            }
+                            .onDisappear {
+                                timerScale = 0.9
+                            }
+                        
+                        // Progress bar with delayed entrance
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                Rectangle()
+                                    .fill(.primary.opacity(0.1))
+                                    .frame(height: 2)
+                                    .scaleEffect(x: progressBarWidth, y: 1, anchor: .leading)
+                                
+                                Rectangle()
+                                    .fill(.primary.opacity(0.5))
+                                    .frame(width: geometry.size.width * calculateProgress(), height: 2)
+                                    .animation(.linear(duration: 0.5), value: calculateProgress())
+                                    .opacity(progressBarWidth)
+                            }
+                        }
+                        .frame(height: 2)
+                        .padding(.horizontal, 40)
+                        .onAppear {
+                            withAnimation(.easeOut(duration: 0.8).delay(0.4)) {
+                                progressBarWidth = 1
+                            }
+                        }
+                        .onDisappear {
+                            progressBarWidth = 0
+                        }
+                        
+                        Button("stop") {
+                            sessionManager.stopSession()
+                            hapticFeedback()
+                        }
+                        .buttonStyle(GlassButtonStyle())
+                    }
+                } else {
+                    // Idle view with staggered animations
+                    VStack(spacing: 30) {
+                        // Minute haptics toggle
+                        Button {
+                            userSettings.minuteHaptics.toggle()
+                            userSettings.saveSettings()
+                            selectionHaptic()
+                        } label: {
+                            HStack {
+                                Image(systemName: userSettings.minuteHaptics ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 16))
+                                Text("minute ticks")
+                                    .font(.system(size: 12, weight: .light, design: .monospaced))
+                            }
+                            .foregroundColor(.primary.opacity(0.5))
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        
+                        // Stats with fade in
+                        if sessionManager.currentSession.currentStreak > 0 {
+                            HStack(spacing: 40) {
+                                VStack {
+                                    Text("\(sessionManager.currentSession.currentStreak)")
+                                        .font(.system(size: 24, weight: .ultraLight, design: .monospaced))
+                                        .foregroundColor(.primary)
+                                    Text("streak")
+                                        .font(.system(size: 10, weight: .light, design: .monospaced))
+                                        .foregroundColor(.primary.opacity(0.5))
+                                }
+                                
+                                VStack {
+                                    Text("\(sessionManager.currentSession.todayCount)")
+                                        .font(.system(size: 24, weight: .ultraLight, design: .monospaced))
+                                        .foregroundColor(.primary)
+                                    Text("today")
+                                        .font(.system(size: 10, weight: .light, design: .monospaced))
+                                        .foregroundColor(.primary.opacity(0.5))
+                                }
+                            }
+                            .opacity(statsOpacity)
+                            .animation(.easeOut(duration: 0.6).delay(0.1), value: statsOpacity)
+                        }
+                        
+                        // Start buttons with staggered scale/fade
+                        HStack(spacing: 40) {
+                            Button("25") {
+                                sessionManager.startSession(type: userSettings.shortSessionType)
+                                hapticFeedback()
+                            }
+                            .buttonStyle(GlassButtonStyle())
+                            .scaleEffect(button25Scale)
+                            .opacity(button25Opacity)
+                            .animation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.2), value: button25Scale)
+                            .animation(.easeOut(duration: 0.4).delay(0.2), value: button25Opacity)
+                            
+                            Button("50") {
+                                sessionManager.startSession(type: userSettings.longSessionType)
+                                hapticFeedback()
+                            }
+                            .buttonStyle(GlassButtonStyle())
+                            .scaleEffect(button50Scale)
+                            .opacity(button50Opacity)
+                            .animation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.35), value: button50Scale)
+                            .animation(.easeOut(duration: 0.4).delay(0.35), value: button50Opacity)
+                        }
+                    }
+                    .onAppear {
+                        // Trigger the animations
+                        withAnimation {
+                            statsOpacity = 1
+                            button25Scale = 1
+                            button25Opacity = 1
+                            button50Scale = 1
+                            button50Opacity = 1
+                        }
+                    }
+                    .onDisappear {
+                        // Reset for next appearance
+                        statsOpacity = 0
+                        button25Scale = 0.8
+                        button25Opacity = 0
+                        button50Scale = 0.8
+                        button50Opacity = 0
+                    }
+                }
+                
+                Spacer()
+            }
+        }
+        .blur(radius: blurRadius)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.5)) {
+                blurRadius = 0
             }
         }
         .onReceive(timer) { _ in
             let session = sessionManager.currentSession
             
             if session.isRunning {
-                // Check if phase should complete (time-based)
                 session.checkPhaseCompletion()
-                
-                // Update display time
                 displayTime = session.formattedTime
-                
-                // Update lastUpdateTime to trigger @Observable
                 session.lastUpdateTime = Date()
+                
+                // Check for minute haptics
+                if userSettings.minuteHaptics {
+                    let currentMinute = Int(session.remainingTime) / 60
+                    if currentMinute != lastMinuteMark && currentMinute > 0 {
+                        // A minute has passed - trigger subtle haptic
+                        minuteTickHaptic()
+                        lastMinuteMark = currentMinute
+                    }
+                }
             } else {
                 displayTime = "00:00"
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .sessionCompleted)) { _ in
-            withAnimation(.easeInOut(duration: 0.4)) {
-                confettiTrigger = true
-            }
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    confettiTrigger = false
-                }
+                lastMinuteMark = 0
             }
         }
     }
     
-    var idleView: some View {
-        VStack(spacing: 50) {
-            VStack(spacing: 20) {
-                HStack {
-                    Spacer()
-                    
-                    Text("TEMPO")
-                        .font(.system(size: 48, weight: .bold, design: .monospaced))
-                        .foregroundColor(primaryTextColor)
-                    
-                    Spacer()
-                    
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            showingSettings = true
-                        }
-                    } label: {
-                        Image(systemName: "gearshape.fill")
-                            .font(.title2)
-                            .foregroundColor(secondaryTextColor)
-                    }
-                }
-                
-                if sessionManager.currentSession.currentStreak > 0 {
-                    HStack(spacing: 15) {
-                        Text("STREAK \(sessionManager.currentSession.currentStreak)")
-                            .font(.system(size: 14, weight: .medium, design: .monospaced))
-                            .foregroundColor(secondaryTextColor)
-                        
-                        Text("TODAY \(sessionManager.currentSession.todayCount)")
-                            .font(.system(size: 14, weight: .medium, design: .monospaced))
-                            .foregroundColor(secondaryTextColor)
-                    }
-                }
-                
-                Text("Pure time, no clutter.")
-                    .font(.system(.title3, design: .monospaced))
-                    .foregroundColor(secondaryTextColor)
-            }
-            
-            VStack(spacing: 20) {
-                Button("25/5 FOCUSED") {
-                    print("🔥 25/5 button pressed")
-                    
-                    // Enhanced haptic sequence for joy - 2025 style
-                    let heavy = UIImpactFeedbackGenerator(style: .heavy)
-                    heavy.prepare()
-                    heavy.impactOccurred()
-                    
-                    let notification = UINotificationFeedbackGenerator()
-                    notification.prepare()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        notification.notificationOccurred(.success)
-                    }
-                    
-                    sessionManager.startSession(type: userSettings.shortSessionType)
-                }
-                .buttonStyle(.borderedProminent)
-                .font(.system(.title2, design: .monospaced))
-                .scaleEffect(isPressed25 ? 0.95 : 1.0)
-                .animation(.interactiveSpring(response: 0.3, dampingFraction: 0.6), value: isPressed25)
-                .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
-                    withAnimation(.easeInOut(duration: 0.1)) {
-                        isPressed25 = pressing
-                    }
-                }, perform: {})
-                
-                Button("50/10 DEEP WORK") {
-                    print("🔥 50/10 button pressed")
-                    
-                    // Enhanced haptic sequence for joy - 2025 style
-                    let heavy = UIImpactFeedbackGenerator(style: .heavy)
-                    heavy.prepare()
-                    heavy.impactOccurred()
-                    
-                    let notification = UINotificationFeedbackGenerator()
-                    notification.prepare()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        notification.notificationOccurred(.success)
-                    }
-                    
-                    sessionManager.startSession(type: userSettings.longSessionType)
-                }
-                .buttonStyle(.borderedProminent)
-                .font(.system(.title2, design: .monospaced))
-                .scaleEffect(isPressed50 ? 0.95 : 1.0)
-                .animation(.interactiveSpring(response: 0.3, dampingFraction: 0.6), value: isPressed50)
-                .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
-                    withAnimation(.easeInOut(duration: 0.1)) {
-                        isPressed50 = pressing
-                    }
-                }, perform: {})
-            }
-        }
-    }
-    
-    var runningSessionView: some View {
-        VStack(spacing: 60) {
-            VStack(spacing: 10) {
-                Text(sessionManager.currentSession.isInBreak ? "BREAK" : "FOCUS")
-                    .font(.system(size: 18, weight: .medium, design: .monospaced))
-                    .foregroundColor(sessionManager.currentSession.isInBreak ? .green : primaryTextColor)
-                
-                Text(displayTime)
-                    .font(.system(size: 72, weight: .bold, design: .monospaced))
-                    .foregroundColor(primaryTextColor)
-                    .monospacedDigit()
-            }
-            
-            HStack(spacing: 40) {
-                Button("PAUSE") {
-                    sessionManager.pauseSession()
-                }
-                .buttonStyle(SecondaryButtonStyle(colorScheme: colorScheme))
-                
-                Button("STOP") {
-                    sessionManager.stopSession()
-                }
-                .buttonStyle(DestructiveButtonStyle(colorScheme: colorScheme))
-            }
-        }
-    }
-    
-    var confettiView: some View {
-        ZStack {
-            ForEach(0..<16, id: \.self) { i in
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(i % 2 == 0 ? Color.accentColor : Color.primary)
-                    .frame(width: 3, height: 20 + Double(i % 4) * 10)
-                    .offset(
-                        x: confettiTrigger ? CGFloat.random(in: -100...100) : 0,
-                        y: confettiTrigger ? -500 - CGFloat.random(in: 0...100) : 0
-                    )
-                    .rotationEffect(.degrees(confettiTrigger ? Double.random(in: -180...180) : 0))
-                    .opacity(confettiTrigger ? 0 : 1)
-                    .animation(
-                        .easeOut(duration: 1.2 + Double.random(in: -0.3...0.3))
-                        .delay(Double(i) * 0.03),
-                        value: confettiTrigger
-                    )
-            }
-            
-            Circle()
-                .fill(Color.accentColor.opacity(0.3))
-                .frame(width: confettiTrigger ? 200 : 0, height: confettiTrigger ? 200 : 0)
-                .animation(.easeOut(duration: 0.6), value: confettiTrigger)
-        }
-    }
-    
-    var settingsView: some View {
-        VStack(spacing: 30) {
-            VStack(spacing: 20) {
-                HStack {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            showingSettings = false
-                        }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.title2)
-                            .foregroundColor(secondaryTextColor)
-                    }
-                    
-                    Spacer()
-                    
-                    Text("SETTINGS")
-                        .font(.system(size: 32, weight: .bold, design: .monospaced))
-                        .foregroundColor(primaryTextColor)
-                    
-                    Spacer()
-                    
-                    Button("SAVE") {
-                        userSettings.saveSettings()
-                        let impact = UIImpactFeedbackGenerator(style: .light)
-                        impact.impactOccurred()
-                        
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            showingSettings = false
-                        }
-                    }
-                    .font(.system(size: 16, weight: .medium, design: .monospaced))
-                    .foregroundColor(primaryTextColor)
-                }
-                .padding(.horizontal)
-            }
-            
-            ScrollView {
-                VStack(spacing: 25) {
-                    settingsSection(title: "FOCUSED SESSION") {
-                        timeSlider(
-                            title: "Work",
-                            value: Binding(
-                                get: { userSettings.shortWorkDuration / 60 },
-                                set: { userSettings.shortWorkDuration = $0 * 60 }
-                            ),
-                            range: 10...60,
-                            suffix: "min"
-                        )
-                        
-                        timeSlider(
-                            title: "Break",
-                            value: Binding(
-                                get: { userSettings.shortBreakDuration / 60 },
-                                set: { userSettings.shortBreakDuration = $0 * 60 }
-                            ),
-                            range: 1...15,
-                            suffix: "min"
-                        )
-                    }
-                    
-                    settingsSection(title: "DEEP WORK SESSION") {
-                        timeSlider(
-                            title: "Work",
-                            value: Binding(
-                                get: { userSettings.longWorkDuration / 60 },
-                                set: { userSettings.longWorkDuration = $0 * 60 }
-                            ),
-                            range: 25...120,
-                            suffix: "min"
-                        )
-                        
-                        timeSlider(
-                            title: "Break",
-                            value: Binding(
-                                get: { userSettings.longBreakDuration / 60 },
-                                set: { userSettings.longBreakDuration = $0 * 60 }
-                            ),
-                            range: 5...30,
-                            suffix: "min"
-                        )
-                    }
-                    
-                    settingsSection(title: "INTERRUPTION MODE") {
-                        VStack(spacing: 12) {
-                            ForEach(PomodoroSession.InterruptionMode.allCases, id: \.self) { mode in
-                                Button {
-                                    userSettings.interruptionMode = mode
-                                    let selection = UISelectionFeedbackGenerator()
-                                    selection.selectionChanged()
-                                } label: {
-                                    HStack {
-                                        Text(mode.rawValue.uppercased())
-                                            .font(.system(size: 16, weight: .medium, design: .monospaced))
-                                            .foregroundColor(userSettings.interruptionMode == mode ? buttonTextColor : primaryTextColor)
-                                        
-                                        Spacer()
-                                        
-                                        Text(modeDescription(mode))
-                                            .font(.system(size: 14, weight: .regular, design: .monospaced))
-                                            .foregroundColor(secondaryTextColor)
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
-                                    .background(userSettings.interruptionMode == mode ? buttonBackgroundColor : Color.clear)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 2)
-                                            .stroke(primaryTextColor.opacity(0.3), lineWidth: 1)
-                                    )
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                            }
-                        }
-                    }
-                }
-                .padding(.horizontal)
-            }
-            
-            Spacer()
-        }
-    }
-    
-    func settingsSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text(title)
-                .font(.system(size: 18, weight: .bold, design: .monospaced))
-                .foregroundColor(primaryTextColor)
-            
-            content()
-        }
-    }
-    
-    func timeSlider(title: String, value: Binding<Double>, range: ClosedRange<Double>, suffix: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 16, weight: .medium, design: .monospaced))
-                    .foregroundColor(primaryTextColor)
-                
-                Spacer()
-                
-                Text("\(Int(value.wrappedValue)) \(suffix)")
-                    .font(.system(size: 16, weight: .bold, design: .monospaced))
-                    .foregroundColor(primaryTextColor)
-            }
-            
-            Slider(value: value, in: range, step: 1)
-                .accentColor(.primary)
-        }
-    }
-    
-    func modeDescription(_ mode: PomodoroSession.InterruptionMode) -> String {
-        switch mode {
-        case .strict: return "Fails after 2s in background"
-        case .focused: return "Fails after 2min in background"
-        case .flexible: return "Auto-pauses, can resume"
-        case .practice: return "Never fails, no streak"
-        }
-    }
-    
-    func mechanicalButton(
-        text: String,
-        subtitle: String,
-        isPressed: Bool,
-        action: @escaping () -> Void,
-        pressedChange: @escaping (Bool) -> Void
-    ) -> some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Text(text)
-                    .font(.system(size: 32, weight: .bold, design: .monospaced))
-                    .foregroundColor(buttonTextColor)
-                
-                Text(subtitle)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundColor(buttonTextColor.opacity(0.7))
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 24)
-            .background(buttonBackgroundColor)
-            .clipShape(RoundedRectangle(cornerRadius: 3))
-            .scaleEffect(isPressed ? 0.96 : 1.0)
-            .shadow(
-                color: .black.opacity(colorScheme == .dark ? 0.3 : 0.1),
-                radius: isPressed ? 2 : 8,
-                x: 0,
-                y: isPressed ? 1 : 4
-            )
-        }
-        .buttonStyle(PlainButtonStyle())
-        .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
-            withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.8, blendDuration: 0.1)) {
-                pressedChange(pressing)
-            }
-            
-            if pressing {
-                let impact = UIImpactFeedbackGenerator(style: .medium)
-                impact.prepare()
-                impact.impactOccurred()
-                
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    let light = UIImpactFeedbackGenerator(style: .light)
-                    light.prepare()
-                    light.impactOccurred()
-                }
-            } else {
-                let selection = UISelectionFeedbackGenerator()
-                selection.prepare()
-                selection.selectionChanged()
-            }
-        }, perform: {
-            // This perform block was empty, which was preventing the Button action from firing
-            // Now the action will be called when the long press completes
-            action()
-        })
-    }
-    
-    func startSession(type: PomodoroSession.SessionType) {
-        let heavy = UIImpactFeedbackGenerator(style: .heavy)
-        heavy.prepare()
-        heavy.impactOccurred()
+    func calculateProgress() -> Double {
+        let session = sessionManager.currentSession
+        guard session.isRunning else { return 0.0 }
         
+        switch session.state {
+        case .running(_, let startTime, let duration):
+            let elapsed = Date().timeIntervalSince(startTime)
+            let progress = elapsed / duration
+            return min(max(progress, 0.0), 1.0)
+            
+        case .breakTime(let startTime, let duration):
+            let elapsed = Date().timeIntervalSince(startTime)
+            let progress = elapsed / duration
+            return min(max(progress, 0.0), 1.0)
+            
+        default:
+            return 0.0
+        }
+    }
+    
+    func hapticFeedback() {
+        // Modern haptic composition - subtle but satisfying
+        let impact = UIImpactFeedbackGenerator(style: .light)
+        impact.prepare()
+        impact.impactOccurred(intensity: 0.7)
+        
+        // Add a tiny secondary tap for texture
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            let soft = UIImpactFeedbackGenerator(style: .soft)
+            soft.prepare()
+            soft.impactOccurred(intensity: 0.3)
+        }
+    }
+    
+    func successHaptics() {
+        // Session complete celebration
         let notification = UINotificationFeedbackGenerator()
         notification.prepare()
+        notification.notificationOccurred(.success)
+        
+        // Add satisfying impacts
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            notification.notificationOccurred(.success)
+            let medium = UIImpactFeedbackGenerator(style: .medium)
+            medium.prepare()
+            medium.impactOccurred(intensity: 0.8)
         }
         
-        withAnimation(.interactiveSpring(response: 0.4, dampingFraction: 0.75, blendDuration: 0.2)) {
-            sessionManager.startSession(type: type)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            let light = UIImpactFeedbackGenerator(style: .light)
+            light.prepare()
+            light.impactOccurred(intensity: 0.5)
         }
     }
     
-    var primaryTextColor: Color {
-        colorScheme == .dark ? .white : .black
+    func selectionHaptic() {
+        // Clean selection feedback
+        let selection = UISelectionFeedbackGenerator()
+        selection.prepare()
+        selection.selectionChanged()
     }
     
-    var secondaryTextColor: Color {
-        colorScheme == .dark ? .gray : .black.opacity(0.6)
-    }
-    
-    var buttonBackgroundColor: Color {
-        colorScheme == .dark ? .white : .black
-    }
-    
-    var buttonTextColor: Color {
-        colorScheme == .dark ? .black : .white
+    func minuteTickHaptic() {
+        // Very subtle tick - like a luxury watch
+        let impact = UIImpactFeedbackGenerator(style: .soft)
+        impact.prepare()
+        impact.impactOccurred(intensity: 0.3)
     }
 }
 
-struct SecondaryButtonStyle: ButtonStyle {
-    let colorScheme: ColorScheme
-    
+struct GlassButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 16, weight: .medium, design: .monospaced))
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
-            .background(Color.clear)
-            .foregroundColor(colorScheme == .dark ? .white : .black)
-            .overlay(
-                RoundedRectangle(cornerRadius: 2)
-                    .stroke(colorScheme == .dark ? .white : .black, lineWidth: 1)
+            .font(.system(size: 36, weight: .ultraLight, design: .monospaced))
+            .foregroundColor(.primary.opacity(0.9))
+            .padding(.horizontal, 40)
+            .padding(.vertical, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.ultraThinMaterial)
+                    .opacity(configuration.isPressed ? 0.5 : 0.7)
             )
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .onChange(of: configuration.isPressed) { _, isPressed in
+                if isPressed {
+                    // Immediate tactile response on press
+                    let impact = UIImpactFeedbackGenerator(style: .rigid)
+                    impact.prepare()
+                    impact.impactOccurred(intensity: 0.5)
+                }
+            }
     }
 }
 
-struct DestructiveButtonStyle: ButtonStyle {
-    let colorScheme: ColorScheme
-    
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 16, weight: .medium, design: .monospaced))
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
-            .background(Color.red)
-            .foregroundColor(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 2))
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
-    }
-}
+// Notification names are defined in Persistence.swift
 
 #Preview {
     ContentView()
+        .environment(SessionManager())
 }
