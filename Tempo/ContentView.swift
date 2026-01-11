@@ -258,14 +258,16 @@ struct BrutalistProgressBar: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            Rectangle()
-                .fill(primaryColor)
-                .frame(height: 40)
-                .frame(width: UIScreen.main.bounds.width * progress)
-            Spacer()
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                Rectangle()
+                    .fill(primaryColor)
+                    .frame(height: 40)
+                    .frame(width: geometry.size.width * progress)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -314,11 +316,14 @@ struct ContentView: View {
                             .lineLimit(1)
                         
                         // Brutalist progress indicator
-                        Rectangle()
-                            .fill(.primary)
-                            .frame(width: UIScreen.main.bounds.width * calculateProgress(), height: 12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 40)
+                        GeometryReader { geometry in
+                            Rectangle()
+                                .fill(.primary)
+                                .frame(width: geometry.size.width * calculateProgress(), height: 12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(height: 12)
+                        .padding(.top, 40)
                         
                         Button("STOP") {
                             sessionManager.stopSession()
@@ -327,7 +332,6 @@ struct ContentView: View {
                         .buttonStyle(BrutalistButtonStyle())
                         .padding(.top, 60)
                     }
-                    .padding(.horizontal, 0)
                 } else {
                     // Idle view - stark interface
                     VStack(spacing: 40) {
