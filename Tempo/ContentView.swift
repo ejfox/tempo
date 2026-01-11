@@ -248,10 +248,9 @@ class PomodoroSession {
     }
 }
 
-// MARK: - Edge Progress Bar
-struct EdgeProgressBar: View {
+// MARK: - Brutalist Progress Bar
+struct BrutalistProgressBar: View {
     let progress: Double
-    @State private var displayProgress: Double = 0
     @Environment(\.colorScheme) private var colorScheme
     
     private var primaryColor: Color {
@@ -259,320 +258,155 @@ struct EdgeProgressBar: View {
     }
     
     var body: some View {
-        ZStack {
-            // Background track - subtle edge trace
-            ScreenEdgeShape(cornerRadius: UIScreen.main.displayCornerRadius)
-                .stroke(primaryColor.opacity(0.05), lineWidth: 4)
-            
-            // Progress stroke - smooth Swiss watch movement
-            ScreenEdgeShape(cornerRadius: UIScreen.main.displayCornerRadius)
-                .trim(from: 0, to: displayProgress)
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            primaryColor.opacity(0.8),
-                            primaryColor.opacity(0.4)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    style: StrokeStyle(
-                        lineWidth: 4,
-                        lineCap: .round,
-                        lineJoin: .round
-                    )
-                )
-                .shadow(color: primaryColor.opacity(0.3), radius: 2)
-                .shadow(color: primaryColor.opacity(0.1), radius: 4)
-        }
-        .onAppear {
-            displayProgress = progress
-        }
-        .onChange(of: progress) { oldValue, newValue in
-            withAnimation(.easeInOut(duration: 0.5)) {
-                displayProgress = newValue
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                Rectangle()
+                    .fill(primaryColor)
+                    .frame(height: 40)
+                    .frame(width: geometry.size.width * progress)
+                Spacer()
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 }
 
-// MARK: - Screen Edge Shape
-struct ScreenEdgeShape: Shape {
-    let cornerRadius: CGFloat
-    
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        
-        let padding: CGFloat = 0
-        
-        let innerRect = CGRect(
-            x: padding,
-            y: padding,
-            width: rect.width - (padding * 2),
-            height: rect.height - (padding * 2)
-        )
-        
-        // Begin path from top-center and trace clockwise
-        path.move(to: CGPoint(x: innerRect.midX, y: innerRect.minY))
-        
-        // Top edge
-        path.addLine(to: CGPoint(x: innerRect.maxX - cornerRadius, y: innerRect.minY))
-        
-        // Top-right corner arc
-        path.addArc(
-            center: CGPoint(x: innerRect.maxX - cornerRadius, y: innerRect.minY + cornerRadius),
-            radius: cornerRadius,
-            startAngle: Angle(degrees: -90),
-            endAngle: Angle(degrees: 0),
-            clockwise: false
-        )
-        
-        // Right edge
-        path.addLine(to: CGPoint(x: innerRect.maxX, y: innerRect.maxY - cornerRadius))
-        
-        // Bottom-right corner arc
-        path.addArc(
-            center: CGPoint(x: innerRect.maxX - cornerRadius, y: innerRect.maxY - cornerRadius),
-            radius: cornerRadius,
-            startAngle: Angle(degrees: 0),
-            endAngle: Angle(degrees: 90),
-            clockwise: false
-        )
-        
-        // Bottom edge
-        path.addLine(to: CGPoint(x: innerRect.minX + cornerRadius, y: innerRect.maxY))
-        
-        // Bottom-left corner arc
-        path.addArc(
-            center: CGPoint(x: innerRect.minX + cornerRadius, y: innerRect.maxY - cornerRadius),
-            radius: cornerRadius,
-            startAngle: Angle(degrees: 90),
-            endAngle: Angle(degrees: 180),
-            clockwise: false
-        )
-        
-        // Left edge
-        path.addLine(to: CGPoint(x: innerRect.minX, y: innerRect.minY + cornerRadius))
-        
-        // Top-left corner arc
-        path.addArc(
-            center: CGPoint(x: innerRect.minX + cornerRadius, y: innerRect.minY + cornerRadius),
-            radius: cornerRadius,
-            startAngle: Angle(degrees: 180),
-            endAngle: Angle(degrees: 270),
-            clockwise: false
-        )
-        
-        return path
-    }
-}
 
-// Extension to get display corner radius
-extension UIScreen {
-    var displayCornerRadius: CGFloat {
-        // Get the actual device corner radius
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let window = windowScene.windows.first else {
-            return 39.0 // Default for modern iPhones
-        }
-        
-        // Use the actual safe area and estimate corner radius
-        let hasNotch = window.safeAreaInsets.top > 20
-        if hasNotch {
-            // Modern devices with notch/Dynamic Island
-            return window.safeAreaInsets.top > 50 ? 55.0 : 39.0
-        } else {
-            // Older devices without notch
-            return 0
-        }
-    }
-}
 
 // MARK: - Content View
 struct ContentView: View {
     @Environment(SessionManager.self) private var sessionManager
     @State private var displayTime: String = "00:00"
     @State private var userSettings = UserSettings()
-    @State private var buttonsVisible = false
-    @State private var button25Scale: CGFloat = 0.8
-    @State private var button50Scale: CGFloat = 0.8
-    @State private var button25Opacity: Double = 0
-    @State private var button50Opacity: Double = 0
-    @State private var statsOpacity: Double = 0
-    @State private var timerScale: CGFloat = 0.9
-    @State private var progressBarWidth: CGFloat = 0
-    @State private var blurRadius: CGFloat = 10
     @State private var lastMinuteMark: Int = 0
     
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     
     var body: some View {
         ZStack {
-            // Glass background
+            // Stark background - pure monochrome
             Color(UIColor.systemBackground)
-                .overlay(Rectangle().fill(.ultraThinMaterial).opacity(0.3))
                 .ignoresSafeArea()
             
-            // Edge progress bar - only show when running
+            // Brutalist progress bar - only show when running
             if sessionManager.currentSession.isRunning {
-                EdgeProgressBar(progress: calculateProgress())
+                BrutalistProgressBar(progress: calculateProgress())
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
-                    .transition(.opacity)
-                    .id(displayTime) // Force refresh when time changes
             }
             
-            VStack(spacing: 60) {
+            VStack(spacing: 0) {
                 Spacer()
                 
                 if sessionManager.currentSession.isRunning {
-                    // Running view with entrance animation
-                    VStack(spacing: 20) {
-                        Text(sessionManager.currentSession.isInBreak ? "break" : "focus")
-                            .font(.system(size: 14, weight: .light, design: .monospaced))
-                            .foregroundColor(.primary.opacity(0.6))
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    // Running view - massive brutalist text
+                    VStack(spacing: 0) {
+                        Text(sessionManager.currentSession.isInBreak ? "BREAK" : "FOCUS")
+                            .font(.system(size: 36, weight: .black, design: .default))
+                            .foregroundColor(.primary)
+                            .tracking(8)
+                            .padding(.bottom, 20)
                         
                         Text(displayTime)
-                            .font(.system(size: 96, weight: .ultraLight, design: .monospaced))
+                            .font(.system(size: 140, weight: .black, design: .default))
                             .foregroundColor(.primary)
                             .monospacedDigit()
-                            .scaleEffect(timerScale)
-                            .onAppear {
-                                withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-                                    timerScale = 1.0
-                                }
-                            }
-                            .onDisappear {
-                                timerScale = 0.9
-                            }
+                            .tracking(-8)
+                            .minimumScaleFactor(0.5)
+                            .lineLimit(1)
                         
-                        // Progress bar with delayed entrance
+                        // Brutalist progress indicator
                         GeometryReader { geometry in
-                            ZStack(alignment: .leading) {
-                                Rectangle()
-                                    .fill(.primary.opacity(0.1))
-                                    .frame(height: 2)
-                                    .scaleEffect(x: progressBarWidth, y: 1, anchor: .leading)
-                                
-                                Rectangle()
-                                    .fill(.primary.opacity(0.5))
-                                    .frame(width: geometry.size.width * calculateProgress(), height: 2)
-                                    .animation(.linear(duration: 0.5), value: calculateProgress())
-                                    .opacity(progressBarWidth)
-                            }
+                            Rectangle()
+                                .fill(.primary)
+                                .frame(width: geometry.size.width * calculateProgress(), height: 12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .frame(height: 2)
-                        .padding(.horizontal, 40)
-                        .onAppear {
-                            withAnimation(.easeOut(duration: 0.8).delay(0.4)) {
-                                progressBarWidth = 1
-                            }
-                        }
-                        .onDisappear {
-                            progressBarWidth = 0
-                        }
+                        .frame(height: 12)
+                        .padding(.top, 40)
                         
-                        Button("stop") {
+                        Button("STOP") {
                             sessionManager.stopSession()
                             hapticFeedback()
                         }
-                        .buttonStyle(GlassButtonStyle())
+                        .buttonStyle(BrutalistButtonStyle())
+                        .padding(.top, 60)
                     }
                 } else {
-                    // Idle view with staggered animations
-                    VStack(spacing: 30) {
+                    // Idle view - stark interface
+                    VStack(spacing: 40) {
                         // Minute haptics toggle
                         Button {
                             userSettings.minuteHaptics.toggle()
                             userSettings.saveSettings()
                             selectionHaptic()
                         } label: {
-                            HStack {
-                                Image(systemName: userSettings.minuteHaptics ? "checkmark.circle.fill" : "circle")
-                                    .font(.system(size: 16))
-                                Text("minute ticks")
-                                    .font(.system(size: 12, weight: .light, design: .monospaced))
+                            HStack(spacing: 12) {
+                                Rectangle()
+                                    .fill(.primary)
+                                    .frame(width: 20, height: 20)
+                                    .overlay(
+                                        Rectangle()
+                                            .fill(Color(UIColor.systemBackground))
+                                            .frame(width: 12, height: 12)
+                                            .opacity(userSettings.minuteHaptics ? 0 : 1)
+                                    )
+                                Text("MINUTE TICKS")
+                                    .font(.system(size: 16, weight: .black, design: .default))
+                                    .tracking(2)
                             }
-                            .foregroundColor(.primary.opacity(0.5))
+                            .foregroundColor(.primary)
                         }
                         .buttonStyle(PlainButtonStyle())
                         
-                        // Stats with fade in
+                        // Stats
                         if sessionManager.currentSession.currentStreak > 0 {
-                            HStack(spacing: 40) {
-                                VStack {
+                            HStack(spacing: 60) {
+                                VStack(spacing: 8) {
                                     Text("\(sessionManager.currentSession.currentStreak)")
-                                        .font(.system(size: 24, weight: .ultraLight, design: .monospaced))
+                                        .font(.system(size: 56, weight: .black, design: .default))
                                         .foregroundColor(.primary)
-                                    Text("streak")
-                                        .font(.system(size: 10, weight: .light, design: .monospaced))
-                                        .foregroundColor(.primary.opacity(0.5))
+                                    Text("STREAK")
+                                        .font(.system(size: 14, weight: .black, design: .default))
+                                        .tracking(3)
+                                        .foregroundColor(.primary)
                                 }
                                 
-                                VStack {
+                                Rectangle()
+                                    .fill(.primary)
+                                    .frame(width: 4, height: 80)
+                                
+                                VStack(spacing: 8) {
                                     Text("\(sessionManager.currentSession.todayCount)")
-                                        .font(.system(size: 24, weight: .ultraLight, design: .monospaced))
+                                        .font(.system(size: 56, weight: .black, design: .default))
                                         .foregroundColor(.primary)
-                                    Text("today")
-                                        .font(.system(size: 10, weight: .light, design: .monospaced))
-                                        .foregroundColor(.primary.opacity(0.5))
+                                    Text("TODAY")
+                                        .font(.system(size: 14, weight: .black, design: .default))
+                                        .tracking(3)
+                                        .foregroundColor(.primary)
                                 }
                             }
-                            .opacity(statsOpacity)
-                            .animation(.easeOut(duration: 0.6).delay(0.1), value: statsOpacity)
+                            .padding(.vertical, 20)
                         }
                         
-                        // Start buttons with staggered scale/fade
-                        HStack(spacing: 40) {
+                        // Start buttons - massive blocks
+                        VStack(spacing: 20) {
                             Button("25") {
                                 sessionManager.startSession(type: userSettings.shortSessionType)
                                 hapticFeedback()
                             }
-                            .buttonStyle(GlassButtonStyle())
-                            .scaleEffect(button25Scale)
-                            .opacity(button25Opacity)
-                            .animation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.2), value: button25Scale)
-                            .animation(.easeOut(duration: 0.4).delay(0.2), value: button25Opacity)
+                            .buttonStyle(BrutalistButtonStyle())
                             
                             Button("50") {
                                 sessionManager.startSession(type: userSettings.longSessionType)
                                 hapticFeedback()
                             }
-                            .buttonStyle(GlassButtonStyle())
-                            .scaleEffect(button50Scale)
-                            .opacity(button50Opacity)
-                            .animation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.35), value: button50Scale)
-                            .animation(.easeOut(duration: 0.4).delay(0.35), value: button50Opacity)
+                            .buttonStyle(BrutalistButtonStyle())
                         }
-                    }
-                    .onAppear {
-                        // Trigger the animations
-                        withAnimation {
-                            statsOpacity = 1
-                            button25Scale = 1
-                            button25Opacity = 1
-                            button50Scale = 1
-                            button50Opacity = 1
-                        }
-                    }
-                    .onDisappear {
-                        // Reset for next appearance
-                        statsOpacity = 0
-                        button25Scale = 0.8
-                        button25Opacity = 0
-                        button50Scale = 0.8
-                        button50Opacity = 0
                     }
                 }
                 
                 Spacer()
-            }
-        }
-        .blur(radius: blurRadius)
-        .onAppear {
-            withAnimation(.easeOut(duration: 0.5)) {
-                blurRadius = 0
             }
         }
         .onReceive(timer) { _ in
@@ -668,25 +502,28 @@ struct ContentView: View {
     }
 }
 
-struct GlassButtonStyle: ButtonStyle {
+struct BrutalistButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 36, weight: .ultraLight, design: .monospaced))
-            .foregroundColor(.primary.opacity(0.9))
-            .padding(.horizontal, 40)
-            .padding(.vertical, 16)
+            .font(.system(size: 72, weight: .black, design: .default))
+            .foregroundColor(configuration.isPressed ? Color(UIColor.systemBackground) : .primary)
+            .tracking(4)
+            .frame(maxWidth: .infinity)
+            .frame(height: 120)
             .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(.ultraThinMaterial)
-                    .opacity(configuration.isPressed ? 0.5 : 0.7)
+                Rectangle()
+                    .fill(configuration.isPressed ? .primary : Color(UIColor.systemBackground))
+                    .overlay(
+                        Rectangle()
+                            .stroke(.primary, lineWidth: 6)
+                    )
             )
-            .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .onChange(of: configuration.isPressed) { _, isPressed in
                 if isPressed {
                     // Immediate tactile response on press
                     let impact = UIImpactFeedbackGenerator(style: .rigid)
                     impact.prepare()
-                    impact.impactOccurred(intensity: 0.5)
+                    impact.impactOccurred(intensity: 0.8)
                 }
             }
     }
