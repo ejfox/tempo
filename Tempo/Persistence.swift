@@ -113,13 +113,12 @@ struct PersistenceController {
     
     func saveContext() {
         let context = container.viewContext
-        
+
         if context.hasChanges {
             do {
                 try context.save()
             } catch {
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
+                print("CoreData save failed: \(error)")
             }
         }
     }
@@ -237,6 +236,35 @@ struct PersistenceController {
         saveContext()
     }
     
+    /// Returns completed session counts per day for the last N days (for the streak grid).
+    /// Each entry is (date, count). Days with 0 sessions are included.
+    func dailySessionCounts(days: Int = 28) -> [(date: Date, count: Int)] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let startDate = calendar.date(byAdding: .day, value: -(days - 1), to: today)!
+
+        let request: NSFetchRequest<TempoSession> = TempoSession.fetchRequest()
+        request.predicate = NSPredicate(
+            format: "isCompleted == YES AND endTime >= %@", startDate as NSDate
+        )
+        request.sortDescriptors = [NSSortDescriptor(key: "endTime", ascending: true)]
+
+        var countsByDay: [Date: Int] = [:]
+        if let sessions = try? container.viewContext.fetch(request) {
+            for session in sessions {
+                if let endTime = session.endTime {
+                    let day = calendar.startOfDay(for: endTime)
+                    countsByDay[day, default: 0] += 1
+                }
+            }
+        }
+
+        return (0..<days).map { offset in
+            let date = calendar.date(byAdding: .day, value: offset, to: startDate)!
+            return (date: date, count: countsByDay[date] ?? 0)
+        }
+    }
+
     func resetDailyStatsIfNeeded() {
         let stats = getOrCreateUserStats()
         let calendar = Calendar.current

@@ -20,70 +20,51 @@ class SessionManager {
     private let ubiquitousStore = NSUbiquitousKeyValueStore.default
     
     // MARK: - Published State
-    var currentSession: PomodoroSession {
-        didSet {
-            print("🔄 SessionManager currentSession changed")
-        }
-    }
+    var currentSession: PomodoroSession
     var userStats: UserStats?
     
     // MARK: - Private State
     private var liveActivityTimer: Timer?
-    
+    private var notificationObservers: [NSObjectProtocol] = []
+
     init(persistenceController: PersistenceController = PersistenceController.shared) {
         self.persistenceController = persistenceController
-        
-        // Always start with a fresh session
+
         self.currentSession = PomodoroSession()
         self.userStats = persistenceController.getOrCreateUserStats()
-        
+
         setupNotifications()
         setupUbiquitousStoreSync()
     }
-    
-    private func setupNotifications() {
-        NotificationCenter.default.addObserver(
-            forName: .tempoDataUpdated,
-            object: nil,
-            queue: .main
-        ) { _ in
-            self.refreshFromPersistence()
-        }
-        
-        NotificationCenter.default.addObserver(
-            forName: .workPhaseCompleted,
-            object: nil,
-            queue: .main
-        ) { _ in
-            self.handleWorkPhaseCompletion()
-        }
-        
-        NotificationCenter.default.addObserver(
-            forName: .sessionCompleted,
-            object: nil,
-            queue: .main
-        ) { _ in
-            self.handleSessionCompletion()
-        }
+
+    deinit {
+        notificationObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        liveActivityTimer?.invalidate()
     }
-    
-    private func restoreSessionIfActive() {
-        // In time-based approach, we'll rely on iCloud KV sync for cross-device session restoration
-        // Local persistence is mainly for statistics and history
-        print("🔄 Skipping local session restoration - using iCloud KV sync instead")
+
+    private func setupNotifications() {
+        notificationObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: .tempoDataUpdated, object: nil, queue: .main
+            ) { [weak self] _ in self?.refreshFromPersistence() }
+        )
+        notificationObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: .workPhaseCompleted, object: nil, queue: .main
+            ) { [weak self] _ in self?.handleWorkPhaseCompletion() }
+        )
+        notificationObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: .sessionCompleted, object: nil, queue: .main
+            ) { [weak self] _ in self?.handleSessionCompletion() }
+        )
     }
     
     // MARK: - Session Control
     /// Starts a new Pomodoro session with the specified type
     /// Initializes Live Activities, cross-device sync, and persistent storage
     func startSession(type: PomodoroSession.SessionType) {
-        print("🚀 SessionManager.startSession called with type: \(type)")
-        
-        // Use the EXISTING currentSession instance instead of creating new one
         currentSession.startSession(type: type)
-        
-        print("🚀 SessionManager currentSession remainingTime: \(currentSession.remainingTime)")
-        print("🚀 SessionManager currentSession isRunning: \(currentSession.isRunning)")
         
         // Save to persistence
         _ = persistenceController.createSession(type: type)
@@ -123,10 +104,13 @@ class SessionManager {
         if let activeSession = persistenceController.getActiveSession() {
             persistenceController.updateSessionState(activeSession, state: "failed")
         }
-        
+
         currentSession.stopSession()
         refreshUserStats()
         broadcastSessionState()
+        stopLiveActivityTimer()
+        endLiveActivity()
+        reloadWidgets()
     }
     
     func completeSession() {
@@ -150,10 +134,6 @@ class SessionManager {
     
     private func refreshFromPersistence() {
         refreshUserStats()
-        
-        // In time-based approach, persistence is mainly for statistics
-        // Active session state comes from iCloud KV sync
-        print("📊 Refreshed user stats from persistence")
     }
     
     private func handleWorkPhaseCompletion() {

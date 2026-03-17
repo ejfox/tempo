@@ -10,6 +10,7 @@
 		4767A2F32E551B6800F0A6CE /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4767A2F22E551B6800F0A6CE /* WidgetKit.framework */; };
 		4767A2F52E551B6800F0A6CE /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4767A2F42E551B6800F0A6CE /* SwiftUI.framework */; };
 		4767A3042E551B6A00F0A6CE /* TempoWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4767A2F02E551B6800F0A6CE /* TempoWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		47BA1C0B2E700A0000F0A6CE /* TempoWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 47BA1C002E700A0000F0A6CE /* TempoWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -34,6 +35,13 @@
 			remoteGlobalIDString = 479FC5BB2E502F4A008EB439;
 			remoteInfo = Tempo;
 		};
+		47BA1C092E700A0000F0A6CE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 479FC5B42E502F4A008EB439 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 47BA1C052E700A0000F0A6CE;
+			remoteInfo = TempoWatch;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -48,6 +56,17 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		47BA1C0C2E700A0000F0A6CE /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				47BA1C0B2E700A0000F0A6CE /* TempoWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -57,6 +76,7 @@
 		479FC5BC2E502F4A008EB439 /* Tempo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tempo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		479FC5D02E502F4D008EB439 /* TempoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TempoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		479FC5DA2E502F4D008EB439 /* TempoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TempoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		47BA1C002E700A0000F0A6CE /* TempoWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TempoWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -103,6 +123,11 @@
 			path = TempoUITests;
 			sourceTree = "<group>";
 		};
+		47BA1C012E700A0000F0A6CE /* TempoWatch */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = TempoWatch;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -136,6 +161,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		47BA1C032E700A0000F0A6CE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -155,6 +187,7 @@
 				479FC5D32E502F4D008EB439 /* TempoTests */,
 				479FC5DD2E502F4D008EB439 /* TempoUITests */,
 				4767A2F62E551B6800F0A6CE /* TempoWidgets */,
+				47BA1C012E700A0000F0A6CE /* TempoWatch */,
 				4767A2F12E551B6800F0A6CE /* Frameworks */,
 				479FC5BD2E502F4A008EB439 /* Products */,
 			);
@@ -167,6 +200,7 @@
 				479FC5D02E502F4D008EB439 /* TempoTests.xctest */,
 				479FC5DA2E502F4D008EB439 /* TempoUITests.xctest */,
 				4767A2F02E551B6800F0A6CE /* TempoWidgetsExtension.appex */,
+				47BA1C002E700A0000F0A6CE /* TempoWatch.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -204,11 +238,13 @@
 				479FC5B92E502F4A008EB439 /* Frameworks */,
 				479FC5BA2E502F4A008EB439 /* Resources */,
 				4767A3052E551B6A00F0A6CE /* Embed Foundation Extensions */,
+				47BA1C0C2E700A0000F0A6CE /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				4767A3032E551B6A00F0A6CE /* PBXTargetDependency */,
+				47BA1C0A2E700A0000F0A6CE /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				479FC5BE2E502F4A008EB439 /* Tempo */,
@@ -266,6 +302,28 @@
 			productReference = 479FC5DA2E502F4D008EB439 /* TempoUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		47BA1C052E700A0000F0A6CE /* TempoWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 47BA1C082E700A0000F0A6CE /* Build configuration list for PBXNativeTarget "TempoWatch" */;
+			buildPhases = (
+				47BA1C022E700A0000F0A6CE /* Sources */,
+				47BA1C032E700A0000F0A6CE /* Frameworks */,
+				47BA1C042E700A0000F0A6CE /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				47BA1C012E700A0000F0A6CE /* TempoWatch */,
+			);
+			name = TempoWatch;
+			packageProductDependencies = (
+			);
+			productName = TempoWatch;
+			productReference = 47BA1C002E700A0000F0A6CE /* TempoWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -289,6 +347,9 @@
 					479FC5D92E502F4D008EB439 = {
 						CreatedOnToolsVersion = 16.4;
 						TestTargetID = 479FC5BB2E502F4A008EB439;
+					};
+					47BA1C052E700A0000F0A6CE = {
+						CreatedOnToolsVersion = 16.4;
 					};
 				};
 			};
@@ -315,6 +376,7 @@
 				479FC5CF2E502F4D008EB439 /* TempoTests */,
 				479FC5D92E502F4D008EB439 /* TempoUITests */,
 				4767A2EF2E551B6800F0A6CE /* TempoWidgetsExtension */,
+				47BA1C052E700A0000F0A6CE /* TempoWatch */,
 			);
 		};
 /* End PBXProject section */
@@ -342,6 +404,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		479FC5D82E502F4D008EB439 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		47BA1C042E700A0000F0A6CE /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -379,6 +448,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		47BA1C022E700A0000F0A6CE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -396,6 +472,11 @@
 			isa = PBXTargetDependency;
 			target = 479FC5BB2E502F4A008EB439 /* Tempo */;
 			targetProxy = 479FC5DB2E502F4D008EB439 /* PBXContainerItemProxy */;
+		};
+		47BA1C0A2E700A0000F0A6CE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 47BA1C052E700A0000F0A6CE /* TempoWatch */;
+			targetProxy = 47BA1C092E700A0000F0A6CE /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -751,6 +832,69 @@
 			};
 			name = Release;
 		};
+		47BA1C062E700A0000F0A6CE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = TempoWatch/TempoWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Z7Q56V2SQX;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Tempo Watch";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.fox.Tempo;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fox.Tempo.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Debug;
+		};
+		47BA1C072E700A0000F0A6CE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = TempoWatch/TempoWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Z7Q56V2SQX;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Tempo Watch";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.fox.Tempo;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fox.Tempo.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -795,6 +939,15 @@
 			buildConfigurations = (
 				479FC5EC2E502F4D008EB439 /* Debug */,
 				479FC5ED2E502F4D008EB439 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		47BA1C082E700A0000F0A6CE /* Build configuration list for PBXNativeTarget "TempoWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				47BA1C062E700A0000F0A6CE /* Debug */,
+				47BA1C072E700A0000F0A6CE /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
