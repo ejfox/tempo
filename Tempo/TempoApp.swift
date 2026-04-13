@@ -2,35 +2,34 @@
 //  TempoApp.swift
 //  Tempo
 //
-//  Created by EJ Fox on 8/15/25.
-//
 
 import SwiftUI
 import ActivityKit
 import WidgetKit
 
-// MARK: - Session Management
-/// SessionManager coordinates between UI, persistence, and cross-device sync
-/// Manages Live Activities, real-time sync via NSUbiquitousKeyValueStore,
-/// and handles session lifecycle events
+// MARK: - Session Manager
+
 @Observable
 class SessionManager {
-    // MARK: - Core Dependencies
     private let persistenceController: PersistenceController
     private let ubiquitousStore = NSUbiquitousKeyValueStore.default
-    
-    // MARK: - Published State
+
     var currentSession: PomodoroSession
     var userStats: UserStats?
-    
-    // MARK: - Private State
+    var userSettings: UserSettings
+    var celebrating = false
+    var isCycleComplete = false
+    var phaseTransitioning = false
+
     private var liveActivityTimer: Timer?
     private var notificationObservers: [NSObjectProtocol] = []
+    private var syncTickCount = 0
+    private var celebrationTask: Task<Void, Never>?
 
-    init(persistenceController: PersistenceController = PersistenceController.shared) {
+    init(persistenceController: PersistenceController = .shared) {
         self.persistenceController = persistenceController
-
         self.currentSession = PomodoroSession()
+        self.userSettings = UserSettings()
         self.userStats = persistenceController.getOrCreateUserStats()
 
         setupNotifications()
@@ -40,284 +39,284 @@ class SessionManager {
     deinit {
         notificationObservers.forEach { NotificationCenter.default.removeObserver($0) }
         liveActivityTimer?.invalidate()
+        celebrationTask?.cancel()
     }
 
-    private func setupNotifications() {
-        notificationObservers.append(
-            NotificationCenter.default.addObserver(
-                forName: .tempoDataUpdated, object: nil, queue: .main
-            ) { [weak self] _ in self?.refreshFromPersistence() }
-        )
-        notificationObservers.append(
-            NotificationCenter.default.addObserver(
-                forName: .workPhaseCompleted, object: nil, queue: .main
-            ) { [weak self] _ in self?.handleWorkPhaseCompletion() }
-        )
-        notificationObservers.append(
-            NotificationCenter.default.addObserver(
-                forName: .sessionCompleted, object: nil, queue: .main
-            ) { [weak self] _ in self?.handleSessionCompletion() }
-        )
-    }
-    
     // MARK: - Session Control
-    /// Starts a new Pomodoro session with the specified type
-    /// Initializes Live Activities, cross-device sync, and persistent storage
+
     func startSession(type: PomodoroSession.SessionType) {
         currentSession.startSession(type: type)
-        
-        // Save to persistence
+        iOSHaptics.sessionStart()
         _ = persistenceController.createSession(type: type)
-        
         currentSession.currentStreak = Int(userStats?.currentStreak ?? 0)
         currentSession.todayCount = Int(userStats?.todayCount ?? 0)
-        
         persistenceController.resetDailyStatsIfNeeded()
-        
         startLiveActivity()
-        startLiveActivityTimer()
-        broadcastSessionState()
+        startTickTimer()
+        broadcastState()
         reloadWidgets()
     }
-    
-    func pauseSession() {
-        currentSession.pauseSession()
-        
-        if let activeSession = persistenceController.getActiveSession() {
-            persistenceController.updateSessionState(activeSession, state: "paused")
-        }
-        
-        broadcastSessionState()
-    }
-    
-    func resumeSession() {
-        currentSession.resumeSession()
-        
-        if let activeSession = persistenceController.getActiveSession() {
-            persistenceController.updateSessionState(activeSession, state: currentSession.isInBreak ? "breakTime" : "running")
-        }
-        
-        broadcastSessionState()
-    }
-    
-    func stopSession() {
-        if let activeSession = persistenceController.getActiveSession() {
-            persistenceController.updateSessionState(activeSession, state: "failed")
-        }
 
+    func stopSession() {
+        if let active = persistenceController.getActiveSession() {
+            persistenceController.updateSessionState(active, state: "failed")
+        }
         currentSession.stopSession()
+        iOSHaptics.sessionStop()
         refreshUserStats()
-        broadcastSessionState()
-        stopLiveActivityTimer()
+        broadcastState()
+        stopTickTimer()
         endLiveActivity()
         reloadWidgets()
     }
-    
-    func completeSession() {
-        if let activeSession = persistenceController.getActiveSession() {
-            persistenceController.updateSessionState(activeSession, state: "completed")
+
+    func pauseSession() {
+        currentSession.pauseSession()
+        iOSHaptics.pause()
+        broadcastState()
+    }
+
+    func resumeSession() {
+        currentSession.resumeSession()
+        iOSHaptics.resume()
+        broadcastState()
+    }
+
+    func togglePause() {
+        if currentSession.isPaused { resumeSession() }
+        else if currentSession.isRunning { pauseSession() }
+    }
+
+    func startBreak() {
+        currentSession.startPendingBreak()
+        iOSHaptics.sessionStart()
+        broadcastState()
+        reloadWidgets()
+    }
+
+    func dismissCelebration() {
+        celebrationTask?.cancel()
+        celebrating = false
+        isCycleComplete = false
+        currentSession.resetToIdle()
+        reloadWidgets()
+    }
+
+    // MARK: - Tick Processing
+
+    func processTick() {
+        let s = userSettings
+        let events = currentSession.tick(
+            pomodorosPerCycle: s.pomodorosPerCycle,
+            longBreakDuration: s.longBreakMinutes * 60,
+            autoStartBreak: s.autoStartBreak,
+            autoStartNextFocus: s.autoStartNextFocus
+        )
+
+        let haptics = s.hapticsEnabled
+
+        for event in events {
+            switch event {
+            case .quarterMilestone:
+                if haptics && s.milestoneHaptics { iOSHaptics.quarterMilestone() }
+            case .minuteBoundary:
+                if haptics && s.minuteMarkHaptics { iOSHaptics.minuteTick() }
+            case .countdown(let sec):
+                if haptics && s.countdownHaptics { iOSHaptics.countdownTick(secondsRemaining: sec) }
+            case .phaseComplete:
+                if haptics && s.phaseCompleteHaptics { iOSHaptics.phaseComplete() }
+                handlePhaseComplete()
+            case .sessionComplete:
+                if haptics && s.sessionCompleteHaptics { iOSHaptics.sessionComplete() }
+                handleSessionComplete()
+            case .cycleBreakStarted:
+                if haptics && s.cycleCompleteHaptics { iOSHaptics.cycleBreakStart() }
+                broadcastState()
+            case .cycleComplete:
+                if haptics && s.cycleCompleteHaptics { iOSHaptics.cycleComplete() }
+                handleSessionComplete(isCycle: true)
+            case .autoStartNext:
+                let type = PomodoroSession.sessionType(
+                    forMinutes: currentSession.lastWorkDuration / 60,
+                    breakRatio: s.breakRatio
+                )
+                currentSession.startSession(type: type)
+                if haptics { iOSHaptics.sessionStart() }
+                broadcastState()
+            }
         }
-        
-        finishSession()
+
+        syncTickCount += 1
+        if syncTickCount % SessionDefaults.syncBroadcastInterval == 0 {
+            broadcastState()
+        }
+        updateLiveActivity()
     }
-    
-    private func finishSession() {
-        currentSession.state = .idle
+
+    private func handlePhaseComplete() {
+        if let active = persistenceController.getActiveSession() {
+            persistenceController.updateSessionState(active, state: "breakTime")
+        }
+        phaseTransitioning = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.6))
+            phaseTransitioning = false
+        }
+        broadcastState()
+        reloadWidgets()
+    }
+
+    private func handleSessionComplete(isCycle: Bool = false) {
+        if let active = persistenceController.getActiveSession() {
+            persistenceController.updateSessionState(active, state: "completed")
+        }
         refreshUserStats()
+        celebrating = true
+        isCycleComplete = isCycle
+        celebrationTask?.cancel()
+        celebrationTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            self?.celebrating = false
+            self?.currentSession.resetToIdle()
+        }
+        broadcastState()
+        stopTickTimer()
+        endLiveActivity()
+        reloadWidgets()
     }
-    
+
+    // MARK: - Timer
+
+    private func startTickTimer() {
+        liveActivityTimer?.invalidate()
+        liveActivityTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self, self.currentSession.isRunning else { return }
+            self.processTick()
+        }
+    }
+
+    private func stopTickTimer() {
+        liveActivityTimer?.invalidate()
+        liveActivityTimer = nil
+    }
+
+    // MARK: - Stats
+
     private func refreshUserStats() {
         userStats = persistenceController.getOrCreateUserStats()
         currentSession.currentStreak = Int(userStats?.currentStreak ?? 0)
         currentSession.todayCount = Int(userStats?.todayCount ?? 0)
     }
-    
-    private func refreshFromPersistence() {
-        refreshUserStats()
-    }
-    
-    private func handleWorkPhaseCompletion() {
-        if let activeSession = persistenceController.getActiveSession() {
-            persistenceController.updateSessionState(activeSession, state: "breakTime")
-        }
-    }
-    
-    private func handleSessionCompletion() {
-        if let activeSession = persistenceController.getActiveSession() {
-            persistenceController.updateSessionState(activeSession, state: "completed")
-        }
-        
-        finishSession()
-        stopLiveActivityTimer()
-        endLiveActivity()
-        reloadWidgets()
-    }
-    
+
     // MARK: - Cross-Device Sync
-    /// Sets up real-time synchronization across devices using NSUbiquitousKeyValueStore
-    /// Updates when remote devices change session state for seamless handoff
+
+    private func setupNotifications() {
+        notificationObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: .tempoDataUpdated, object: nil, queue: .main
+            ) { [weak self] _ in self?.refreshUserStats() }
+        )
+    }
+
     private func setupUbiquitousStoreSync() {
         NotificationCenter.default.addObserver(
             forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
-            object: ubiquitousStore,
-            queue: .main
-        ) { _ in
-            self.handleRemoteSessionUpdate()
-        }
+            object: ubiquitousStore, queue: .main
+        ) { [weak self] _ in self?.handleRemoteUpdate() }
     }
-    
-    private func handleRemoteSessionUpdate() {
-        guard let sessionData = ubiquitousStore.data(forKey: "currentSession") else { return }
-        
+
+    private func handleRemoteUpdate() {
+        guard let data = ubiquitousStore.data(forKey: SyncKey.currentSession.rawValue) else { return }
         do {
-            let decoder = JSONDecoder()
-            let remoteSessionInfo = try decoder.decode(SessionSyncInfo.self, from: sessionData)
-            
-            if remoteSessionInfo.lastUpdateTime > currentSession.lastUpdateTime {
-                syncFromRemoteSession(remoteSessionInfo)
+            let remote = try JSONDecoder().decode(SessionSyncInfo.self, from: data)
+            guard remote.lastUpdateTime > currentSession.lastUpdateTime else { return }
+
+            if remote.isActive {
+                let elapsed = Date().timeIntervalSince(remote.startTime)
+                let remaining = max(0, remote.totalDuration - elapsed)
+                guard remaining > 0 else { return }
+
+                let type = PomodoroSession.SessionType.from(
+                    syncString: remote.sessionType,
+                    work: remote.workDuration,
+                    break: remote.breakDuration
+                )
+
+                if remote.isInBreak {
+                    currentSession.state = .breakTime(startTime: remote.startTime, duration: remote.breakDuration)
+                } else {
+                    currentSession.state = .running(type: type, startTime: remote.startTime, duration: remote.totalDuration)
+                }
+
+                currentSession.currentStreak = remote.currentStreak
+                currentSession.todayCount = remote.todayCount
+                currentSession.cyclePosition = remote.cyclePosition ?? 0
+                currentSession.lastUpdateTime = Date()
+                currentSession.firedMilestones = []
+                currentSession.lastCountdownSecond = -1
+
+                startTickTimer()
+                updateLiveActivity()
+            } else if currentSession.isActive {
+                currentSession.stopSession()
+                endLiveActivity()
             }
         } catch {
-            print("Failed to decode remote session: \(error)")
+            print("Sync error: \(error)")
         }
     }
-    
-    private func syncFromRemoteSession(_ remoteInfo: SessionSyncInfo) {
-        print("🌐 Syncing from remote session - active: \(remoteInfo.isActive)")
-        
-        if remoteInfo.isActive {
-            // Calculate current remaining time from remote start time
-            let elapsed = Date().timeIntervalSince(remoteInfo.startTime)
-            let calculatedRemaining = max(0, remoteInfo.totalDuration - elapsed)
-            
-            if calculatedRemaining > 0 {
-                let sessionType: PomodoroSession.SessionType = remoteInfo.sessionType == "short" 
-                    ? .short(work: remoteInfo.workDuration, break: remoteInfo.breakDuration)
-                    : .long(work: remoteInfo.workDuration, break: remoteInfo.breakDuration)
-                    
-                if remoteInfo.isInBreak {
-                    currentSession.state = .breakTime(startTime: remoteInfo.startTime, duration: remoteInfo.breakDuration)
-                } else {
-                    currentSession.state = .running(type: sessionType, startTime: remoteInfo.startTime, duration: remoteInfo.totalDuration)
-                }
-                
-                currentSession.currentStreak = remoteInfo.currentStreak
-                currentSession.todayCount = remoteInfo.todayCount
-                currentSession.lastUpdateTime = Date()
-                
-                updateLiveActivity()
-                print("📱 Joined remote session - remaining: \(calculatedRemaining)s")
-            }
-        } else if currentSession.isRunning {
-            currentSession.stopSession()
-            endLiveActivity()
-            print("🛑 Remote session stopped - stopping local session")
-        }
-    }
-    
-    private func broadcastSessionState() {
-        let sessionInfo = SessionSyncInfo(
+
+    private func broadcastState() {
+        let info = SessionSyncInfo(
             isActive: currentSession.isRunning,
-            startTime: getSessionStartTime(),
-            totalDuration: getSessionTotalDuration(),
-            workDuration: getWorkDuration(),
-            breakDuration: getBreakDuration(),
+            startTime: currentSession.startTime,
+            totalDuration: currentSession.totalDuration,
+            workDuration: currentSession.workDuration,
+            breakDuration: currentSession.breakDuration,
             remainingTime: currentSession.remainingTime,
             currentStreak: currentSession.currentStreak,
             todayCount: currentSession.todayCount,
-            sessionType: getSessionTypeString(),
+            sessionType: currentSession.sessionTypeString,
             isInBreak: currentSession.isInBreak,
-            lastUpdateTime: Date()
+            lastUpdateTime: Date(),
+            cyclePosition: currentSession.cyclePosition
         )
-        
+
         do {
-            let encoder = JSONEncoder()
-            let data = try encoder.encode(sessionInfo)
-            ubiquitousStore.set(data, forKey: "currentSession")
+            let data = try JSONEncoder().encode(info)
+            ubiquitousStore.set(data, forKey: SyncKey.currentSession.rawValue)
             ubiquitousStore.synchronize()
+            // Widget data bridge
+            let shared = PomodoroSession.sharedSuite
+            shared.set(data, forKey: WidgetKey.session.rawValue)
+            shared.set(currentSession.todayCount, forKey: WidgetKey.todayCount.rawValue)
+            shared.set(currentSession.currentStreak, forKey: WidgetKey.streak.rawValue)
+            shared.set(currentSession.cyclePosition, forKey: WidgetKey.cyclePosition.rawValue)
+            shared.set(userSettings.pomodorosPerCycle, forKey: WidgetKey.pomodorosPerCycle.rawValue)
         } catch {
-            print("Failed to broadcast session state: \(error)")
+            print("Broadcast error: \(error)")
         }
     }
-    
-    private func getSessionStartTime() -> Date {
-        switch currentSession.state {
-        case .running(_, let startTime, _), .breakTime(let startTime, _):
-            return startTime
-        default:
-            return Date()
-        }
-    }
-    
-    private func getSessionTotalDuration() -> TimeInterval {
-        switch currentSession.state {
-        case .running(_, _, let duration):
-            return duration
-        case .breakTime(_, let duration):
-            return duration
-        default:
-            return 0
-        }
-    }
-    
-    private func getWorkDuration() -> TimeInterval {
-        switch currentSession.state {
-        case .running(let type, _, _):
-            return type.workDuration
-        case .breakTime:
-            return 25 * 60 // Default fallback
-        default:
-            return 0
-        }
-    }
-    
-    private func getBreakDuration() -> TimeInterval {
-        switch currentSession.state {
-        case .running(let type, _, _):
-            return type.breakDuration
-        case .breakTime:
-            return 5 * 60 // Default fallback
-        default:
-            return 0
-        }
-    }
-    
-    private func getSessionTypeString() -> String {
-        switch currentSession.state {
-        case .running(let type, _, _):
-            return type == PomodoroSession.defaultShort ? "short" : "long"
-        default:
-            return "short"
-        }
-    }
-    
-    // MARK: - Live Activities Management
-    /// Manages Dynamic Island and Lock Screen Live Activities
-    /// Updates real-time with session progress, streaks, and remaining time
+
+    // MARK: - Live Activity
+
     private func startLiveActivity() {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        
-        let attributes = TempoActivityAttributes(
+        let attrs = TempoActivityAttributes(
             sessionType: currentSession.isInBreak ? "break" : "work",
             totalDuration: currentSession.remainingTime
         )
-        
         let state = TempoActivityAttributes.ContentState(
             remainingTime: currentSession.remainingTime,
             currentStreak: currentSession.currentStreak,
             todayCount: currentSession.todayCount,
             isInBreak: currentSession.isInBreak
         )
-        
         let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(30))
-        
-        do {
-            let activity = try Activity.request(attributes: attributes, content: content)
-            print("Live Activity started: \(activity.id)")
-        } catch {
-            print("Failed to start Live Activity: \(error)")
-        }
+        _ = try? Activity.request(attributes: attrs, content: content)
     }
-    
+
     private func updateLiveActivity() {
         Task {
             let state = TempoActivityAttributes.ContentState(
@@ -326,59 +325,33 @@ class SessionManager {
                 todayCount: currentSession.todayCount,
                 isInBreak: currentSession.isInBreak
             )
-            
             let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(30))
-            
             for activity in Activity<TempoActivityAttributes>.activities {
                 await activity.update(content)
             }
         }
     }
-    
+
     private func endLiveActivity() {
         Task {
+            let state = TempoActivityAttributes.ContentState(
+                remainingTime: 0,
+                currentStreak: currentSession.currentStreak,
+                todayCount: currentSession.todayCount,
+                isInBreak: false
+            )
             for activity in Activity<TempoActivityAttributes>.activities {
-                await activity.end(
-                    ActivityContent(
-                        state: TempoActivityAttributes.ContentState(
-                            remainingTime: 0,
-                            currentStreak: currentSession.currentStreak,
-                            todayCount: currentSession.todayCount,
-                            isInBreak: false
-                        ),
-                        staleDate: Date()
-                    ),
-                    dismissalPolicy: .immediate
-                )
+                await activity.end(ActivityContent(state: state, staleDate: Date()), dismissalPolicy: .immediate)
             }
         }
     }
-    
+
     private func reloadWidgets() {
         WidgetCenter.shared.reloadAllTimelines()
     }
-    
-    private func startLiveActivityTimer() {
-        liveActivityTimer?.invalidate()
-        var tickCount = 0
-        liveActivityTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            if self.currentSession.isRunning {
-                self.updateLiveActivity()
-                
-                // Broadcast state every 5 seconds for real-time sync
-                tickCount += 1
-                if tickCount % 5 == 0 {
-                    self.broadcastSessionState()
-                }
-            }
-        }
-    }
-    
-    private func stopLiveActivityTimer() {
-        liveActivityTimer?.invalidate()
-        liveActivityTimer = nil
-    }
 }
+
+// MARK: - App Entry Point
 
 @main
 struct TempoApp: App {
@@ -395,6 +368,9 @@ struct TempoApp: App {
             ContentView()
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environment(sessionManager)
+                .onAppear {
+                    sessionManager.currentSession.resetDailyStatsIfNeeded()
+                }
         }
     }
 }

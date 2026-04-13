@@ -2,7 +2,7 @@
 //  TempoWidgetsControl.swift
 //  TempoWidgets
 //
-//  Created by EJ Fox on 8/19/25.
+//  Control widget for starting/checking a Pomodoro session.
 //
 
 import AppIntents
@@ -16,39 +16,43 @@ struct TempoWidgetsControl: ControlWidget {
             provider: Provider()
         ) { value in
             ControlWidgetToggle(
-                "Start Timer",
+                "Focus",
                 isOn: value,
-                action: StartTimerIntent()
+                action: ToggleFocusIntent()
             ) { isRunning in
-                Label(isRunning ? "On" : "Off", systemImage: "timer")
+                Label(isRunning ? "Focusing" : "Start", systemImage: isRunning ? "timer" : "play.fill")
             }
         }
-        .displayName("Timer")
-        .description("A an example control that runs a timer.")
+        .displayName("Tempo")
+        .description("Start or check your focus session.")
     }
 }
 
 extension TempoWidgetsControl {
     struct Provider: ControlValueProvider {
-        var previewValue: Bool {
-            false
-        }
+        var previewValue: Bool { false }
 
         func currentValue() async throws -> Bool {
-            let isRunning = true // Check if the timer is running
-            return isRunning
+            let defaults = UserDefaults(suiteName: "group.com.fox.Tempo")
+            guard let data = defaults?.data(forKey: "widget.session"),
+                  let info = try? JSONDecoder().decode(WidgetSessionInfo.self, from: data) else {
+                return false
+            }
+            return info.isActive
         }
     }
 }
 
-struct StartTimerIntent: SetValueIntent {
-    static let title: LocalizedStringResource = "Start a timer"
+struct ToggleFocusIntent: SetValueIntent {
+    static let title: LocalizedStringResource = "Toggle Focus Session"
 
-    @Parameter(title: "Timer is running")
+    @Parameter(title: "Session active")
     var value: Bool
 
+    static var openAppWhenRun: Bool = true
+
     func perform() async throws -> some IntentResult {
-        // Start / stop the timer based on `value`.
+        // Opens the app — SessionManager handles start/stop
         return .result()
     }
 }
