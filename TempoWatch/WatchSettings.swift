@@ -182,7 +182,7 @@ class WatchSettings {
 
     // MARK: - Init / Persistence
 
-    private let defaults = UserDefaults(suiteName: "group.com.fox.Tempo") ?? .standard
+    private let defaults = UserDefaults(suiteName: AppGroup.suiteName) ?? .standard
 
     private static let settingsKeys = [
         "breakRatio", "autoStartBreak", "autoStartNextFocus",
@@ -233,7 +233,19 @@ class WatchSettings {
         idleStatsSlot    = InfoSlotContent(rawValue: defaults.string(forKey: "idleStatsSlot") ?? "streakCount") ?? .streakCount
     }
 
+    private var saveTask: Task<Void, Never>?
+
     private func save() {
+        // Debounce: coalesce rapid changes (e.g., slider drags) into one write
+        saveTask?.cancel()
+        saveTask = Task { @MainActor [self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            persistNow()
+        }
+    }
+
+    private func persistNow() {
         defaults.set(breakRatio, forKey: "breakRatio")
         defaults.set(autoStartBreak, forKey: "autoStartBreak")
         defaults.set(autoStartNextFocus, forKey: "autoStartNextFocus")

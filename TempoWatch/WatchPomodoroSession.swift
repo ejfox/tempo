@@ -124,8 +124,8 @@ class WatchPomodoroSession {
 
     // MARK: - Presets
 
-    static let durationPresets: [TimeInterval] = [5, 10, 15, 20, 25, 30, 45, 50, 60]
-    static let defaultPresetIndex = 4 // 25 min
+    static let durationPresets = SessionDefaults.durationPresets
+    static let defaultPresetIndex = SessionDefaults.defaultPresetIndex
 
     static func sessionType(forMinutes minutes: TimeInterval, breakRatio: Double = 0.2) -> SessionType {
         let workSeconds = minutes * 60
@@ -341,8 +341,7 @@ class WatchPomodoroSession {
         let remaining = remainingTime
         let prog = progress
 
-        // Quarter milestones (25%, 50%, 75%)
-        for quarter in [25, 50, 75] where !firedMilestones.contains(quarter) {
+        for quarter in SessionDefaults.milestonePercentages where !firedMilestones.contains(quarter) {
             if prog >= Double(quarter) / 100.0 {
                 firedMilestones.insert(quarter)
                 events.append(.quarterMilestone(quarter))
@@ -365,8 +364,7 @@ class WatchPomodoroSession {
             }
         }
 
-        // Final countdown (last 5 seconds only — 10 was too noisy)
-        if secondsInt > 0 && secondsInt <= 5 && secondsInt != lastCountdownSecond {
+        if secondsInt > 0 && secondsInt <= SessionDefaults.countdownSeconds && secondsInt != lastCountdownSecond {
             lastCountdownSecond = secondsInt
             events.append(.countdown(secondsInt))
         }
@@ -437,7 +435,7 @@ class WatchPomodoroSession {
 
     // MARK: - Persistence
 
-    static let sharedSuite = UserDefaults(suiteName: "group.com.fox.Tempo") ?? .standard
+    static let sharedSuite = UserDefaults(suiteName: AppGroup.suiteName) ?? .standard
 
     private static var migrated = false
 
@@ -446,36 +444,36 @@ class WatchPomodoroSession {
         guard !Self.migrated else { return }
         Self.migrated = true
         let shared = Self.sharedSuite
-        guard shared.object(forKey: "session.migrated") == nil else { return }
+        guard shared.object(forKey: SessionKey.migrated.rawValue) == nil else { return }
         let old = UserDefaults.standard
-        for key in ["session.todayCount", "session.currentStreak", "session.cyclePosition", "session.lastSaveDate"] {
-            if let val = old.object(forKey: key) {
-                shared.set(val, forKey: key)
+        for key in [SessionKey.todayCount, .currentStreak, .cyclePosition, .lastSaveDate] {
+            if let val = old.object(forKey: key.rawValue) {
+                shared.set(val, forKey: key.rawValue)
             }
         }
-        shared.set(true, forKey: "session.migrated")
+        shared.set(true, forKey: SessionKey.migrated.rawValue)
     }
 
     func saveStats() {
         let d = Self.sharedSuite
-        d.set(todayCount, forKey: "session.todayCount")
-        d.set(currentStreak, forKey: "session.currentStreak")
-        d.set(cyclePosition, forKey: "session.cyclePosition")
-        d.set(Date(), forKey: "session.lastSaveDate")
+        d.set(todayCount, forKey: SessionKey.todayCount.rawValue)
+        d.set(currentStreak, forKey: SessionKey.currentStreak.rawValue)
+        d.set(cyclePosition, forKey: SessionKey.cyclePosition.rawValue)
+        d.set(Date(), forKey: SessionKey.lastSaveDate.rawValue)
     }
 
     func restoreStats() {
         migrateIfNeeded()
         let d = Self.sharedSuite
-        todayCount = d.integer(forKey: "session.todayCount")
-        currentStreak = d.integer(forKey: "session.currentStreak")
-        cyclePosition = d.integer(forKey: "session.cyclePosition")
+        todayCount = d.integer(forKey: SessionKey.todayCount.rawValue)
+        currentStreak = d.integer(forKey: SessionKey.currentStreak.rawValue)
+        cyclePosition = d.integer(forKey: SessionKey.cyclePosition.rawValue)
     }
 
     func resetDailyStatsIfNeeded() {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        if let lastSave = Self.sharedSuite.object(forKey: "session.lastSaveDate") as? Date,
+        if let lastSave = Self.sharedSuite.object(forKey: SessionKey.lastSaveDate.rawValue) as? Date,
            !calendar.isDate(lastSave, inSameDayAs: today) {
             todayCount = 0
             cyclePosition = 0

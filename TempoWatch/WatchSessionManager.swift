@@ -187,7 +187,7 @@ class WatchSessionManager {
 
         // Broadcast state periodically for cross-device sync
         syncTickCount += 1
-        if syncTickCount % 5 == 0 {
+        if syncTickCount % SessionDefaults.syncBroadcastInterval == 0 {
             broadcastState()
         }
     }
@@ -235,10 +235,10 @@ class WatchSessionManager {
         }
 
         let alerts: [AlertPoint] = [
-            AlertPoint(secondsBefore: duration / 2, title: "Halfway", body: "Halfway through \(phase).", id: "tempo.halfway"),
-            AlertPoint(secondsBefore: 5 * 60, title: "5 minutes left", body: "5 minutes remaining.", id: "tempo.5min"),
-            AlertPoint(secondsBefore: 2 * 60, title: "2 minutes left", body: "Almost there.", id: "tempo.2min"),
-            AlertPoint(secondsBefore: 60, title: "Final minute", body: "One minute to go.", id: "tempo.1min"),
+            AlertPoint(secondsBefore: duration / 2, title: "Halfway", body: "Halfway through \(phase).", id: AlertID.halfway.rawValue),
+            AlertPoint(secondsBefore: 5 * 60, title: "5 minutes left", body: "5 minutes remaining.", id: AlertID.fiveMin.rawValue),
+            AlertPoint(secondsBefore: 2 * 60, title: "2 minutes left", body: "Almost there.", id: AlertID.twoMin.rawValue),
+            AlertPoint(secondsBefore: 60, title: "Final minute", body: "One minute to go.", id: AlertID.oneMin.rawValue),
         ]
 
         for alert in alerts {
@@ -259,9 +259,7 @@ class WatchSessionManager {
     }
 
     private func cancelApproachingEndAlerts() {
-        notificationCenter.removePendingNotificationRequests(
-            withIdentifiers: ["tempo.halfway", "tempo.5min", "tempo.2min", "tempo.1min"]
-        )
+        notificationCenter.removePendingNotificationRequests(withIdentifiers: AlertID.allIDs)
     }
 
     // MARK: - Extended Runtime
@@ -294,7 +292,7 @@ class WatchSessionManager {
 
     private func handleRemoteUpdate() {
         guard !celebrating else { return }
-        guard let data = ubiquitousStore.data(forKey: "currentSession") else { return }
+        guard let data = ubiquitousStore.data(forKey: SyncKey.currentSession.rawValue) else { return }
 
         do {
             let remote = try JSONDecoder().decode(SessionSyncInfo.self, from: data)
@@ -356,15 +354,15 @@ class WatchSessionManager {
         do {
             let data = try JSONEncoder().encode(info)
             // iCloud sync for cross-device
-            ubiquitousStore.set(data, forKey: "currentSession")
+            ubiquitousStore.set(data, forKey: SyncKey.currentSession.rawValue)
             ubiquitousStore.synchronize()
             // Shared App Group for local widget reads
             let shared = WatchPomodoroSession.sharedSuite
-            shared.set(data, forKey: "widget.session")
-            shared.set(session.todayCount, forKey: "widget.todayCount")
-            shared.set(session.currentStreak, forKey: "widget.streak")
-            shared.set(session.cyclePosition, forKey: "widget.cyclePosition")
-            shared.set(settings?.pomodorosPerCycle ?? 4, forKey: "widget.pomodorosPerCycle")
+            shared.set(data, forKey: WidgetKey.session.rawValue)
+            shared.set(session.todayCount, forKey: WidgetKey.todayCount.rawValue)
+            shared.set(session.currentStreak, forKey: WidgetKey.streak.rawValue)
+            shared.set(session.cyclePosition, forKey: WidgetKey.cyclePosition.rawValue)
+            shared.set(settings?.pomodorosPerCycle ?? 4, forKey: WidgetKey.pomodorosPerCycle.rawValue)
         } catch {
             print("Watch broadcast error: \(error)")
         }

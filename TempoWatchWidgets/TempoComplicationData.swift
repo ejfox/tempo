@@ -95,7 +95,7 @@ struct TempoComplicationData {
         let base = entry(for: now)
         guard base.isActive, base.remainingTime > 0 else { return [base] }
 
-        let minutes = Int(base.remainingTime / 60) + 1
+        let minutes = min(Int(base.remainingTime / 60) + 1, 30)
         return (0..<minutes).map { i in
             let futureDate = now.addingTimeInterval(TimeInterval(i * 60))
             return entry(for: futureDate)
