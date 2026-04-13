@@ -7,55 +7,54 @@
 //
 
 import SwiftUI
-import WatchKit
 
 // MARK: - Main View
 
 struct WatchContentView: View {
     @Environment(WatchSessionManager.self) private var manager
     @Environment(WatchSettings.self) private var settings
-    @State private var displayTime: String = "00:00"
-
-    let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var isBreak: Bool { manager.session.isInBreak }
 
     var body: some View {
-        ZStack {
-            // Background — inverts during break if enabled
-            backgroundColor
-                .ignoresSafeArea()
-                .animation(.easeInOut(duration: 0.6), value: isBreak)
+        TimelineView(.periodic(from: .now, by: 1.0)) { context in
+            let _ = tickIfNeeded()
 
-            if manager.celebrating {
-                CelebrationView()
-                    .environment(manager)
-                    .transition(.opacity)
-            } else if manager.session.isActive {
-                ActiveSessionView(displayTime: $displayTime)
-                    .environment(manager)
-                    .environment(settings)
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .scale(scale: 0.9)),
-                        removal: .opacity
-                    ))
-            } else {
-                DurationSelectorView()
-                    .environment(manager)
-                    .environment(settings)
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .scale(scale: 1.05)),
-                        removal: .opacity.combined(with: .scale(scale: 0.9))
-                    ))
+            ZStack {
+                backgroundColor
+                    .ignoresSafeArea()
+                    .animation(.easeInOut(duration: 0.6), value: isBreak)
+
+                if manager.celebrating {
+                    CelebrationView()
+                        .environment(manager)
+                        .transition(.opacity)
+                } else if manager.session.isActive {
+                    ActiveSessionView()
+                        .environment(manager)
+                        .environment(settings)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.9)),
+                            removal: .opacity
+                        ))
+                } else {
+                    DurationSelectorView()
+                        .environment(manager)
+                        .environment(settings)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 1.05)),
+                            removal: .opacity.combined(with: .scale(scale: 0.9))
+                        ))
+                }
             }
+            .animation(.easeInOut(duration: 0.4), value: manager.session.isActive)
+            .animation(.easeInOut(duration: 0.3), value: manager.celebrating)
         }
-        .animation(.easeInOut(duration: 0.4), value: manager.session.isActive)
-        .animation(.easeInOut(duration: 0.3), value: manager.celebrating)
-        .onReceive(timer) { _ in
-            guard manager.session.isRunning else { return }
-            manager.processTick()
-            displayTime = manager.session.formattedTime
-        }
+    }
+
+    private func tickIfNeeded() {
+        guard manager.session.isRunning else { return }
+        manager.processTick()
     }
 
     private var backgroundColor: Color {
@@ -138,16 +137,10 @@ struct DurationSelectorView: View {
                         .foregroundStyle(.secondary)
                         .opacity(appeared ? 0.7 : 0)
 
-                    if manager.session.currentStreak > 0 {
-                        HStack(spacing: 12) {
-                            Label("\(manager.session.currentStreak)", systemImage: "flame")
-                            Label("\(manager.session.todayCount)", systemImage: "checkmark.circle")
-                        }
-                        .font(.system(size: 10, weight: .light, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                    // Idle stats slot — configurable
+                    idleSlotContent
                         .padding(.top, 4)
-                        .opacity(appeared ? 1 : 0)
-                    }
+                        .opacity(appeared ? 0.8 : 0)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -166,7 +159,7 @@ struct DurationSelectorView: View {
                 .buttonStyle(.plain)
 
                 Button {
-                    let type = WatchPomodoroSession.sessionType(forMinutes: selectedMinutes)
+                    let type = WatchPomodoroSession.sessionType(forMinutes: selectedMinutes, breakRatio: settings.breakRatio)
                     manager.startSession(type: type)
                 } label: {
                     Text("begin")
@@ -197,9 +190,9 @@ struct DurationSelectorView: View {
             guard newIndex != selectedIndex else { return }
             selectedIndex = newIndex
             if newIndex == detentIndex {
-                WatchHaptics.crownDetent()
+                WatchHaptics.crownDetent.play()
             } else {
-                WatchHaptics.crownSnap()
+                WatchHaptics.crownSnap.play()
             }
         }
         .onAppear {
@@ -212,6 +205,36 @@ struct DurationSelectorView: View {
             appeared = false
         }
     }
+
+    @ViewBuilder
+    private var idleSlotContent: some View {
+        switch settings.idleStatsSlot {
+        case .phaseLabel:
+            Text("ready")
+                .font(.system(size: 10, weight: .light, design: .monospaced))
+                .foregroundStyle(.tertiary)
+        case .cycleIndicator:
+            CycleIndicator(
+                position: manager.session.cyclePosition,
+                total: settings.pomodorosPerCycle
+            )
+        case .streakCount:
+            if manager.session.currentStreak > 0 {
+                HStack(spacing: 12) {
+                    Label("\(manager.session.currentStreak)", systemImage: "flame")
+                    Label("\(manager.session.todayCount)", systemImage: "checkmark.circle")
+                }
+                .font(.system(size: 10, weight: .light, design: .monospaced))
+                .foregroundStyle(.tertiary)
+            }
+        case .todayCount:
+            Label("\(manager.session.todayCount) today", systemImage: "checkmark.circle")
+                .font(.system(size: 10, weight: .light, design: .monospaced))
+                .foregroundStyle(.tertiary)
+        case .none:
+            EmptyView()
+        }
+    }
 }
 
 // MARK: - Active Session View
@@ -219,12 +242,9 @@ struct DurationSelectorView: View {
 struct ActiveSessionView: View {
     @Environment(WatchSessionManager.self) private var manager
     @Environment(WatchSettings.self) private var settings
-    @Binding var displayTime: String
 
     @State private var edgeAppeared = false
-    @State private var showConfirmStop = false
     @State private var pulseOpacity: Double = 1.0
-    @State private var confirmDismissWork: DispatchWorkItem?
 
     // Phase transition animation state
     @State private var transitionFlash: Double = 0
@@ -244,19 +264,15 @@ struct ActiveSessionView: View {
     private var labelColor: Color { inverted ? .black.opacity(0.5) : .white.opacity(0.5) }
     private var flashColor: Color { inverted ? .black : .white }
 
+    @State private var pulseEdgeOpacity: Double = 1.0
+
     var body: some View {
         ZStack {
-            // Edge-trace progress — hugs the watch bezel
-            EdgeTraceProgress(
-                progress: edgeAppeared ? manager.session.progress : 0,
-                color: edgeColor,
-                isPaused: manager.session.isPaused,
-                lineWidth: CGFloat(settings.edgeLineWidth),
-                showGlow: settings.edgeGlow
-            )
-            .animation(.linear(duration: 1), value: manager.session.progress)
-            .animation(.easeInOut(duration: 0.6), value: isBreak)
-            .ignoresSafeArea()
+            // Edge-trace progress — style driven by settings
+            edgeView
+                .animation(.linear(duration: 1), value: manager.session.progress)
+                .animation(.easeInOut(duration: 0.6), value: isBreak)
+                .ignoresSafeArea()
 
             // Transition flare — edge glow during phase change
             if edgeGlowAnim > 0 {
@@ -271,13 +287,10 @@ struct ActiveSessionView: View {
                 Spacer()
 
                 VStack(spacing: 3) {
-                    Text(manager.session.phaseLabel)
-                        .font(.system(size: 11, weight: .light, design: .monospaced))
-                        .foregroundStyle(labelColor)
-                        .contentTransition(.interpolate)
-                        .animation(.easeInOut(duration: 0.5), value: manager.session.phaseLabel)
+                    // Top slot — configurable
+                    slotContent(for: settings.activeTopSlot, color: labelColor)
 
-                    Text(displayTime)
+                    Text(manager.session.formattedTime)
                         .font(.system(size: 38, weight: .ultraLight, design: .monospaced))
                         .monospacedDigit()
                         .foregroundStyle(textColor)
@@ -286,24 +299,40 @@ struct ActiveSessionView: View {
                         .scaleEffect(transitionTextScale)
                         .animation(.easeInOut(duration: 0.6), value: isBreak)
 
-                    if manager.session.currentStreak > 0 && settings.showStreakDots {
-                        StreakDots(count: manager.session.currentStreak, color: textColor)
-                            .padding(.top, 2)
-                    }
+                    // Bottom slot — configurable
+                    slotContent(for: settings.activeBottomSlot, color: textColor)
+                        .padding(.top, 2)
                 }
                 .scaleEffect(transitionScale)
                 .blur(radius: transitionBlur)
                 .onTapGesture {
-                    manager.togglePause()
+                    if manager.session.isBreakPending {
+                        manager.startBreak()
+                    } else {
+                        manager.togglePause()
+                    }
                 }
 
                 Spacer()
 
-                StopButton(
-                    showConfirm: $showConfirmStop,
-                    confirmDismissWork: $confirmDismissWork,
-                    isBreak: isBreak
-                ) {
+                // "Start break" button when break is pending
+                if manager.session.isBreakPending {
+                    Button {
+                        manager.startBreak()
+                    } label: {
+                        Text("start break")
+                            .font(.system(size: 15, weight: .medium, design: .monospaced))
+                            .foregroundStyle(textColor.opacity(0.9))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(textColor.opacity(0.1), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 4)
+                }
+
+                StopButton(isBreak: isBreak) {
                     manager.stopSession()
                 }
                 .padding(.horizontal, 20)
@@ -389,6 +418,76 @@ struct ActiveSessionView: View {
         } else {
             withAnimation(.easeInOut(duration: 0.2)) {
                 pulseOpacity = 1.0
+            }
+        }
+    }
+
+    // MARK: - Slot Content
+
+    @ViewBuilder
+    private func slotContent(for slot: WatchSettings.InfoSlotContent, color: Color) -> some View {
+        switch slot {
+        case .phaseLabel:
+            Text(manager.session.phaseLabel)
+                .font(.system(size: 11, weight: .light, design: .monospaced))
+                .foregroundStyle(color)
+                .contentTransition(.interpolate)
+                .animation(.easeInOut(duration: 0.5), value: manager.session.phaseLabel)
+        case .cycleIndicator:
+            CycleIndicator(
+                position: manager.session.cyclePosition,
+                total: settings.pomodorosPerCycle,
+                color: color
+            )
+        case .streakCount:
+            if manager.session.currentStreak > 0 {
+                StreakDots(count: manager.session.currentStreak, color: color)
+            }
+        case .todayCount:
+            Label("\(manager.session.todayCount)", systemImage: "checkmark.circle")
+                .font(.system(size: 10, weight: .light, design: .monospaced))
+                .foregroundStyle(color.opacity(0.7))
+        case .none:
+            EmptyView()
+        }
+    }
+
+    // MARK: - Edge Style
+
+    @ViewBuilder
+    private var edgeView: some View {
+        switch settings.activeEdgeStyle {
+        case .thin:
+            EdgeTraceProgress(
+                progress: edgeAppeared ? manager.session.progress : 0,
+                color: edgeColor,
+                isPaused: manager.session.isPaused,
+                lineWidth: 3,
+                showGlow: false
+            )
+        case .thick:
+            EdgeTraceProgress(
+                progress: edgeAppeared ? manager.session.progress : 0,
+                color: edgeColor,
+                isPaused: manager.session.isPaused,
+                lineWidth: CGFloat(settings.edgeLineWidth),
+                showGlow: settings.edgeGlow
+            )
+        case .none:
+            EmptyView()
+        case .pulse:
+            EdgeTraceProgress(
+                progress: edgeAppeared ? manager.session.progress : 0,
+                color: edgeColor,
+                isPaused: manager.session.isPaused,
+                lineWidth: 4,
+                showGlow: true
+            )
+            .opacity(pulseEdgeOpacity)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                    pulseEdgeOpacity = 0.4
+                }
             }
         }
     }
@@ -509,11 +608,31 @@ struct StreakDots: View {
     }
 }
 
+// MARK: - Cycle Indicator
+
+/// Shows position within the Pomodoro cycle as horizontal bar segments.
+/// Filled = completed this cycle, empty = remaining.
+struct CycleIndicator: View {
+    let position: Int    // how many completed this cycle (0-indexed)
+    let total: Int       // e.g. 4
+    var color: Color = .white
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<total, id: \.self) { i in
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(color.opacity(i < position ? 0.6 : 0.12))
+                    .frame(width: 14, height: 3)
+            }
+        }
+    }
+}
+
 // MARK: - Stop Button
 
 struct StopButton: View {
-    @Binding var showConfirm: Bool
-    @Binding var confirmDismissWork: DispatchWorkItem?
+    @State private var showConfirm = false
+    @State private var dismissTask: Task<Void, Never>?
     var isBreak: Bool = false
     let onStop: () -> Void
 
@@ -523,7 +642,7 @@ struct StopButton: View {
     var body: some View {
         if showConfirm {
             Button {
-                confirmDismissWork?.cancel()
+                dismissTask?.cancel()
                 onStop()
                 showConfirm = false
             } label: {
@@ -541,15 +660,16 @@ struct StopButton: View {
             ))
         } else {
             Button {
-                WatchHaptics.confirmWarning()
+                WatchHaptics.confirmWarning.play()
                 withAnimation(.spring(response: 0.3)) {
                     showConfirm = true
                 }
-                let work = DispatchWorkItem {
+                dismissTask?.cancel()
+                dismissTask = Task {
+                    try? await Task.sleep(for: .seconds(3))
+                    guard !Task.isCancelled else { return }
                     withAnimation { showConfirm = false }
                 }
-                confirmDismissWork = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: work)
             } label: {
                 Text("stop")
                     .font(.system(size: 13, weight: .light, design: .monospaced))
@@ -569,24 +689,28 @@ struct StopButton: View {
 struct CelebrationView: View {
     @Environment(WatchSessionManager.self) private var manager
 
-    @State private var ringScales: [CGFloat] = [0.3, 0.3, 0.3]
-    @State private var ringOpacities: [Double] = [0.8, 0.6, 0.4]
+    private var isCycle: Bool { manager.isCycleComplete }
+    private var ringCount: Int { isCycle ? 5 : 3 }
+
+    @State private var ringScales: [CGFloat] = Array(repeating: 0.3, count: 5)
+    @State private var ringOpacities: [Double] = [0.8, 0.7, 0.6, 0.5, 0.4]
     @State private var checkScale: CGFloat = 0
     @State private var checkOpacity: Double = 0
     @State private var streakScale: CGFloat = 0.5
+    @State private var labelScale: CGFloat = 0.5
 
     var body: some View {
         ZStack {
-            // Expanding celebration rings
-            ForEach(0..<3, id: \.self) { i in
+            // Expanding celebration rings — more rings for cycle completion
+            ForEach(0..<ringCount, id: \.self) { i in
                 Circle()
-                    .stroke(Color.white.opacity(ringOpacities[i]), lineWidth: 2)
+                    .stroke(Color.white.opacity(ringOpacities[i]), lineWidth: isCycle ? 3 : 2)
                     .scaleEffect(ringScales[i])
             }
 
             VStack(spacing: 8) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 32, weight: .light))
+                Image(systemName: isCycle ? "trophy" : "checkmark")
+                    .font(.system(size: isCycle ? 28 : 32, weight: .light))
                     .foregroundStyle(.white)
                     .scaleEffect(checkScale)
                     .opacity(checkOpacity)
@@ -598,9 +722,10 @@ struct CelebrationView: View {
                         .contentTransition(.numericText())
                         .scaleEffect(streakScale)
 
-                    Text("streak")
-                        .font(.system(size: 10, weight: .light, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                    Text(isCycle ? "cycle complete" : "streak")
+                        .font(.system(size: 10, weight: isCycle ? .medium : .light, design: .monospaced))
+                        .foregroundStyle(isCycle ? .white.opacity(0.8) : .secondary)
+                        .scaleEffect(labelScale)
                 }
             }
         }
@@ -608,10 +733,11 @@ struct CelebrationView: View {
             manager.dismissCelebration()
         }
         .onAppear {
-            // Staggered ring expansion
-            for i in 0..<3 {
-                withAnimation(.easeOut(duration: 1.2).delay(Double(i) * 0.15)) {
-                    ringScales[i] = 1.8
+            // Staggered ring expansion — more rings, slower stagger for cycle
+            let stagger = isCycle ? 0.12 : 0.15
+            for i in 0..<ringCount {
+                withAnimation(.easeOut(duration: isCycle ? 1.5 : 1.2).delay(Double(i) * stagger)) {
+                    ringScales[i] = isCycle ? 2.2 : 1.8
                     ringOpacities[i] = 0
                 }
             }
@@ -623,6 +749,7 @@ struct CelebrationView: View {
 
             withAnimation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.4)) {
                 streakScale = 1.0
+                labelScale = 1.0
             }
         }
     }
@@ -634,26 +761,13 @@ struct InstrumentRing: View {
     let progress: Double
     var thickness: CGFloat = 4
     var color: Color = .white
-    var glowColor: Color? = nil
-
-    private let glowThreshold = 0.01
 
     var body: some View {
-        ZStack {
-            Circle()
-                .trim(from: 0, to: progress)
-                .stroke(color, style: StrokeStyle(lineWidth: thickness, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-
-            if let glow = glowColor, progress > glowThreshold {
-                Circle()
-                    .trim(from: max(0, progress - 0.02), to: progress)
-                    .stroke(glow.opacity(0.4), style: StrokeStyle(lineWidth: thickness + 4, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .blur(radius: 3)
-            }
-        }
-        .padding(12)
+        Circle()
+            .trim(from: 0, to: progress)
+            .stroke(color, style: StrokeStyle(lineWidth: thickness, lineCap: .round))
+            .rotationEffect(.degrees(-90))
+            .padding(12)
     }
 }
 

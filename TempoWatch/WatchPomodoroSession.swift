@@ -7,7 +7,6 @@
 //
 
 import Foundation
-import WatchKit
 
 // MARK: - Sync Payload
 
@@ -24,6 +23,26 @@ struct SessionSyncInfo: Codable {
     let sessionType: String
     let isInBreak: Bool
     let lastUpdateTime: Date
+    let cyclePosition: Int?
+
+    init(isActive: Bool, startTime: Date, totalDuration: TimeInterval,
+         workDuration: TimeInterval, breakDuration: TimeInterval,
+         remainingTime: TimeInterval, currentStreak: Int, todayCount: Int,
+         sessionType: String, isInBreak: Bool, lastUpdateTime: Date,
+         cyclePosition: Int = 0) {
+        self.isActive = isActive
+        self.startTime = startTime
+        self.totalDuration = totalDuration
+        self.workDuration = workDuration
+        self.breakDuration = breakDuration
+        self.remainingTime = remainingTime
+        self.currentStreak = currentStreak
+        self.todayCount = todayCount
+        self.sessionType = sessionType
+        self.isInBreak = isInBreak
+        self.lastUpdateTime = lastUpdateTime
+        self.cyclePosition = cyclePosition
+    }
 }
 
 // MARK: - Session Model
@@ -37,8 +56,9 @@ class WatchPomodoroSession {
         case idle
         case running(type: SessionType, startTime: Date, duration: TimeInterval)
         case paused(type: SessionType, remaining: TimeInterval)
+        case breakPending(type: SessionType, breakDuration: TimeInterval)
         case breakTime(startTime: Date, duration: TimeInterval)
-        case breakPaused(remaining: TimeInterval)
+        case breakPaused(remaining: TimeInterval, duration: TimeInterval)
         case completed
     }
 
@@ -77,12 +97,23 @@ class WatchPomodoroSession {
         }
     }
 
+    // MARK: - Lifecycle
+
+    init() {
+        restoreStats()
+    }
+
     // MARK: - State
 
     var state: SessionState = .idle
     var currentStreak: Int = 0
     var todayCount: Int = 0
     var lastUpdateTime: Date = Date()
+
+    /// Position within the current Pomodoro cycle (0-indexed, 0 to pomodorosPerCycle-1)
+    var cyclePosition: Int = 0
+    /// Remembers last work duration for auto-restart
+    var lastWorkDuration: TimeInterval = 25 * 60
 
     /// Quarter milestones already fired this phase (25, 50, 75).
     var firedMilestones: Set<Int> = []
@@ -96,9 +127,9 @@ class WatchPomodoroSession {
     static let durationPresets: [TimeInterval] = [5, 10, 15, 20, 25, 30, 45, 50, 60]
     static let defaultPresetIndex = 4 // 25 min
 
-    static func sessionType(forMinutes minutes: TimeInterval) -> SessionType {
+    static func sessionType(forMinutes minutes: TimeInterval, breakRatio: Double = 0.2) -> SessionType {
         let workSeconds = minutes * 60
-        let breakSeconds: TimeInterval = minutes <= 25 ? 5 * 60 : 10 * 60
+        let breakSeconds = workSeconds * breakRatio
         return minutes <= 25
             ? .short(work: workSeconds, break: breakSeconds)
             : .long(work: workSeconds, break: breakSeconds)
@@ -112,8 +143,10 @@ class WatchPomodoroSession {
             return max(0, duration - Date().timeIntervalSince(start))
         case .breakTime(let start, let duration):
             return max(0, duration - Date().timeIntervalSince(start))
-        case .paused(_, let remaining), .breakPaused(let remaining):
+        case .paused(_, let remaining), .breakPaused(let remaining, _):
             return remaining
+        case .breakPending(_, let breakDuration):
+            return breakDuration
         default:
             return 0
         }
@@ -123,7 +156,8 @@ class WatchPomodoroSession {
         switch state {
         case .running(_, _, let d), .breakTime(_, let d): return d
         case .paused(let type, _): return type.workDuration
-        case .breakPaused(let remaining): return remaining // approximate
+        case .breakPaused(_, let duration): return duration
+        case .breakPending(_, let breakDuration): return breakDuration
         default: return 0
         }
     }
@@ -143,7 +177,7 @@ class WatchPomodoroSession {
     var isActive: Bool {
         switch state {
         case .idle, .completed: return false
-        default: return true
+        default: return true // includes breakPending
         }
     }
 
@@ -161,10 +195,16 @@ class WatchPomodoroSession {
         }
     }
 
+    var isBreakPending: Bool {
+        if case .breakPending = state { return true }
+        return false
+    }
+
     var phaseLabel: String {
         switch state {
         case .running:              return "focus"
         case .paused, .breakPaused: return "paused"
+        case .breakPending:         return "break ready"
         case .breakTime:            return "break"
         case .completed:            return "done"
         case .idle:                 return ""
@@ -185,7 +225,8 @@ class WatchPomodoroSession {
 
     var workDuration: TimeInterval {
         switch state {
-        case .running(let type, _, _), .paused(let type, _): return type.workDuration
+        case .running(let type, _, _), .paused(let type, _), .breakPending(let type, _):
+            return type.workDuration
         default: return 25 * 60
         }
     }
@@ -193,15 +234,16 @@ class WatchPomodoroSession {
     var breakDuration: TimeInterval {
         switch state {
         case .running(let type, _, _), .paused(let type, _): return type.breakDuration
+        case .breakPending(_, let d): return d
         case .breakTime(_, let d): return d
-        case .breakPaused(let d): return d
+        case .breakPaused(_, let d): return d
         default: return 5 * 60
         }
     }
 
     var sessionTypeString: String {
         switch state {
-        case .running(let type, _, _), .paused(let type, _):
+        case .running(let type, _, _), .paused(let type, _), .breakPending(let type, _):
             return type.syncString
         default:
             return "short"
@@ -211,6 +253,7 @@ class WatchPomodoroSession {
     // MARK: - Actions
 
     func startSession(type: SessionType) {
+        lastWorkDuration = type.workDuration
         state = .running(type: type, startTime: Date(), duration: type.workDuration)
         lastUpdateTime = Date()
         resetTracking()
@@ -220,6 +263,7 @@ class WatchPomodoroSession {
         state = .idle
         lastUpdateTime = Date()
         resetTracking()
+        saveStats()
     }
 
     func pauseSession() {
@@ -227,8 +271,8 @@ class WatchPomodoroSession {
         switch state {
         case .running(let type, _, _):
             state = .paused(type: type, remaining: remaining)
-        case .breakTime:
-            state = .breakPaused(remaining: remaining)
+        case .breakTime(_, let duration):
+            state = .breakPaused(remaining: remaining, duration: duration)
         default:
             break
         }
@@ -239,7 +283,7 @@ class WatchPomodoroSession {
         switch state {
         case .paused(let type, let remaining):
             state = .running(type: type, startTime: Date(), duration: remaining)
-        case .breakPaused(let remaining):
+        case .breakPaused(let remaining, _):
             state = .breakTime(startTime: Date(), duration: remaining)
         default:
             break
@@ -251,10 +295,46 @@ class WatchPomodoroSession {
         state = .idle
     }
 
+    /// Start a break that was pending user confirmation (autoStartBreak is off).
+    func startPendingBreak() {
+        switch state {
+        case .breakPending(_, let breakDuration):
+            state = .breakTime(startTime: Date(), duration: breakDuration)
+            resetTracking()
+        default:
+            break
+        }
+        lastUpdateTime = Date()
+    }
+
+    /// Extend the current focus session by adding more seconds.
+    /// Works for both running and paused states.
+    func extend(bySeconds seconds: TimeInterval) {
+        switch state {
+        case .running(let type, let start, let duration):
+            let newDuration = duration + seconds
+            let newType = SessionType.custom(work: newDuration, break: type.breakDuration)
+            state = .running(type: newType, startTime: start, duration: newDuration)
+        case .paused(let type, let remaining):
+            let newRemaining = remaining + seconds
+            let newType = SessionType.custom(work: type.workDuration + seconds, break: type.breakDuration)
+            state = .paused(type: newType, remaining: newRemaining)
+        default:
+            break
+        }
+        lastUpdateTime = Date()
+    }
+
     // MARK: - Tick Processing
 
     /// Called every second while running. Returns events for the manager to dispatch haptics.
-    func tick() -> [SessionEvent] {
+    /// Cycle configuration is passed through from the manager (session stays settings-agnostic).
+    func tick(
+        pomodorosPerCycle: Int = 4,
+        longBreakDuration: TimeInterval = 15 * 60,
+        autoStartBreak: Bool = true,
+        autoStartNextFocus: Bool = false
+    ) -> [SessionEvent] {
         guard isRunning else { return [] }
 
         var events: [SessionEvent] = []
@@ -293,28 +373,56 @@ class WatchPomodoroSession {
 
         // Phase completion
         if remaining <= 0 {
-            events.append(contentsOf: completeCurrentPhase())
+            events.append(contentsOf: completeCurrentPhase(
+                pomodorosPerCycle: pomodorosPerCycle,
+                longBreakDuration: longBreakDuration,
+                autoStartBreak: autoStartBreak,
+                autoStartNextFocus: autoStartNextFocus
+            ))
         }
 
         lastUpdateTime = Date()
         return events
     }
 
-    // MARK: - Private
+    // MARK: - Phase Completion (Cycle Logic)
 
-    private func completeCurrentPhase() -> [SessionEvent] {
+    private func completeCurrentPhase(
+        pomodorosPerCycle: Int,
+        longBreakDuration: TimeInterval,
+        autoStartBreak: Bool,
+        autoStartNextFocus: Bool
+    ) -> [SessionEvent] {
         switch state {
         case .running(let type, _, _):
-            state = .breakTime(startTime: Date(), duration: type.breakDuration)
+            // Work phase completed — determine break duration
+            let isLongBreak = cyclePosition == (pomodorosPerCycle - 1)
+            let breakDur = isLongBreak ? longBreakDuration : type.breakDuration
+
+            if autoStartBreak {
+                state = .breakTime(startTime: Date(), duration: breakDur)
+            } else {
+                state = .breakPending(type: type, breakDuration: breakDur)
+            }
             resetTracking()
-            return [.phaseComplete]
+            return isLongBreak ? [.phaseComplete, .cycleBreakStarted] : [.phaseComplete]
 
         case .breakTime:
             todayCount += 1
             currentStreak += 1
-            state = .completed
+            cyclePosition = (cyclePosition + 1) % pomodorosPerCycle
+            let isCycleComplete = cyclePosition == 0
             resetTracking()
-            return [.sessionComplete]
+            saveStats()
+
+            if autoStartNextFocus {
+                return isCycleComplete
+                    ? [.cycleComplete, .autoStartNext]
+                    : [.sessionComplete, .autoStartNext]
+            } else {
+                state = .completed
+                return isCycleComplete ? [.cycleComplete] : [.sessionComplete]
+            }
 
         default:
             return []
@@ -326,6 +434,54 @@ class WatchPomodoroSession {
         lastCountdownSecond = -1
         lastMinuteFired = -1
     }
+
+    // MARK: - Persistence
+
+    static let sharedSuite = UserDefaults(suiteName: "group.com.fox.Tempo") ?? .standard
+
+    private static var migrated = false
+
+    /// One-time migration from .standard to shared suite
+    private func migrateIfNeeded() {
+        guard !Self.migrated else { return }
+        Self.migrated = true
+        let shared = Self.sharedSuite
+        guard shared.object(forKey: "session.migrated") == nil else { return }
+        let old = UserDefaults.standard
+        for key in ["session.todayCount", "session.currentStreak", "session.cyclePosition", "session.lastSaveDate"] {
+            if let val = old.object(forKey: key) {
+                shared.set(val, forKey: key)
+            }
+        }
+        shared.set(true, forKey: "session.migrated")
+    }
+
+    func saveStats() {
+        let d = Self.sharedSuite
+        d.set(todayCount, forKey: "session.todayCount")
+        d.set(currentStreak, forKey: "session.currentStreak")
+        d.set(cyclePosition, forKey: "session.cyclePosition")
+        d.set(Date(), forKey: "session.lastSaveDate")
+    }
+
+    func restoreStats() {
+        migrateIfNeeded()
+        let d = Self.sharedSuite
+        todayCount = d.integer(forKey: "session.todayCount")
+        currentStreak = d.integer(forKey: "session.currentStreak")
+        cyclePosition = d.integer(forKey: "session.cyclePosition")
+    }
+
+    func resetDailyStatsIfNeeded() {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        if let lastSave = Self.sharedSuite.object(forKey: "session.lastSaveDate") as? Date,
+           !calendar.isDate(lastSave, inSameDayAs: today) {
+            todayCount = 0
+            cyclePosition = 0
+            saveStats()
+        }
+    }
 }
 
 // MARK: - Session Events
@@ -336,6 +492,9 @@ enum SessionEvent {
     case countdown(Int)
     case phaseComplete
     case sessionComplete
+    case cycleBreakStarted   // long break begins (4th pomodoro earned it)
+    case cycleComplete       // full cycle of N pomodoros finished
+    case autoStartNext       // auto-start next focus session
 }
 
 // MARK: - Comparable Clamping

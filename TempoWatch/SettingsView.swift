@@ -36,6 +36,46 @@ struct SettingsView: View {
                     Text("Auto-start next focus")
                         .font(.system(size: 13, design: .monospaced))
                 }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Long break")
+                        .font(.system(size: 13, design: .monospaced))
+                    Picker("", selection: $s.longBreakMinutes) {
+                        Text("15m").tag(15.0)
+                        Text("20m").tag(20.0)
+                        Text("25m").tag(25.0)
+                        Text("30m").tag(30.0)
+                    }
+                    .pickerStyle(.wheel)
+                    .frame(height: 40)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Pomodoros/cycle")
+                        .font(.system(size: 13, design: .monospaced))
+                    Picker("", selection: $s.pomodorosPerCycle) {
+                        Text("2").tag(2)
+                        Text("3").tag(3)
+                        Text("4").tag(4)
+                    }
+                    .pickerStyle(.wheel)
+                    .frame(height: 40)
+                }
+            }
+
+            // MARK: - Alerts
+            Section("Alerts") {
+                Toggle(isOn: $s.approachingEndAlerts) {
+                    Text("Approaching end")
+                        .font(.system(size: 13, design: .monospaced))
+                }
+
+                if settings.approachingEndAlerts {
+                    Text("Halfway · 5 min · 2 min · 1 min")
+                        .font(.system(size: 10, weight: .light, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .listRowBackground(Color.clear)
+                }
             }
 
             // MARK: - Haptics
@@ -60,6 +100,76 @@ struct SettingsView: View {
                         Text("5-min marks")
                             .font(.system(size: 12, design: .monospaced))
                     }
+
+                    Toggle(isOn: $s.phaseCompleteHaptics) {
+                        Text("Phase complete")
+                            .font(.system(size: 12, design: .monospaced))
+                    }
+
+                    Toggle(isOn: $s.sessionCompleteHaptics) {
+                        Text("Session complete")
+                            .font(.system(size: 12, design: .monospaced))
+                    }
+
+                    Toggle(isOn: $s.cycleCompleteHaptics) {
+                        Text("Cycle complete")
+                            .font(.system(size: 12, design: .monospaced))
+                    }
+                }
+            }
+
+            // MARK: - Customize
+            Section("Customize") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Top info")
+                        .font(.system(size: 12, weight: .light, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Picker("", selection: $s.activeTopSlot) {
+                        ForEach(WatchSettings.InfoSlotContent.allCases) { slot in
+                            Text(slot.displayName).tag(slot)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                    .frame(height: 40)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Bottom info")
+                        .font(.system(size: 12, weight: .light, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Picker("", selection: $s.activeBottomSlot) {
+                        ForEach(WatchSettings.InfoSlotContent.allCases) { slot in
+                            Text(slot.displayName).tag(slot)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                    .frame(height: 40)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Edge style")
+                        .font(.system(size: 12, weight: .light, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Picker("", selection: $s.activeEdgeStyle) {
+                        ForEach(WatchSettings.EdgeStyle.allCases) { style in
+                            Text(style.displayName).tag(style)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                    .frame(height: 40)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Idle stats")
+                        .font(.system(size: 12, weight: .light, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Picker("", selection: $s.idleStatsSlot) {
+                        ForEach(WatchSettings.InfoSlotContent.allCases) { slot in
+                            Text(slot.displayName).tag(slot)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                    .frame(height: 40)
                 }
             }
 
@@ -125,7 +235,7 @@ struct ColorRow: View {
                     )
                     .onTapGesture {
                         selection = choice
-                        WKInterfaceDevice.current().play(.click)
+                        WatchHaptics.crownSnap.play()
                     }
             }
         }
