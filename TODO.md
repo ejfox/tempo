@@ -21,31 +21,49 @@ The complication code is written (`Tempo/TempoWatchWidgets/`) but needs a target
 
 The entitlements plist has `group.com.fox.Tempo` but Xcode needs the capability registered:
 
-1. Select the `TempoWatch` target → Signing & Capabilities → + Capability → App Groups
-2. Add `group.com.fox.Tempo`
-3. Do the same for the `TempoWatchWidgets` target
+1. Select the `Tempo` (iOS) target → Signing & Capabilities → + Capability → App Groups → add `group.com.fox.Tempo`
+2. Select the `TempoWatch` target → same
+3. Select the `TempoWatchWidgets` target → same
+4. Select the `TempoWidgets` (iOS widget) target → same
 
 ### 3. Verify iCloud KV Store on Widget Target
 
 1. Select `TempoWatchWidgets` target → Signing & Capabilities
 2. Ensure iCloud → Key-Value Storage is enabled with container `$(TeamIdentifierPrefix)com.fox.Tempo`
 
+### 4. App Icons
+
+**Provide 1024x1024 PNG** app icons for:
+- `Tempo/Assets.xcassets/AppIcon.appiconset/` (iOS)
+- `TempoWatch/Assets.xcassets/AppIcon.appiconset/` (watchOS)
+
+Design suggestion: thin circular progress arc on pure black background, matching the edge-trace visual language.
+
+---
+
+## Pre-Submission Checklist
+
+- [ ] Complete Xcode setup steps above
+- [ ] Add app icons
+- [ ] Build and run on device — verify all 3 iOS tabs work
+- [ ] Build and run on Apple Watch — verify complications load
+- [ ] Start session on watch → verify iOS syncs
+- [ ] Start session on iOS → verify watch syncs
+- [ ] Complete 4 sessions → verify long break + cycle reset
+- [ ] Kill and relaunch → verify stats persist
+- [ ] Add home screen widget → verify data shows
+- [ ] Test Live Activity on lock screen + Dynamic Island
+- [ ] Run VoiceOver → verify accessibility
+- [ ] Archive for TestFlight → verify no submission errors
+- [ ] Set MARKETING_VERSION to desired release number
+
 ---
 
 ## Future Work
 
-### High Priority
-
-- [ ] Test all 4 complications on a real watch face
-- [ ] Test complication timeline refresh during active sessions (verify per-minute entries work)
-- [ ] Test App Group data sharing (widget reads watch app writes)
-- [ ] Test one-time UserDefaults migration (install old version, update, verify settings preserved)
-
-### Nice to Have
-
-- [ ] Long-press edit mode for in-app customization (v2 — currently in Settings only)
-- [ ] Daily session history in UserDefaults for a mini bar chart in the Day complication
-- [ ] Watch face complication that acts as a start button (tap to launch + begin session)
-- [ ] HealthKit integration (log focus sessions as Mindful Minutes)
-- [ ] Focus mode integration (auto-enable Do Not Disturb during focus sessions)
-- [ ] iOS companion app improvements (the iOS side is still brutalist/basic compared to the watch)
+- [ ] Long-press edit mode for watch-face-style in-app customization (v2)
+- [ ] HealthKit integration (Mindful Minutes)
+- [ ] Focus mode integration (auto Do Not Disturb)
+- [ ] Onboarding flow for first-time users
+- [ ] iPad layout optimization
+- [ ] Localization (currently English-only)
