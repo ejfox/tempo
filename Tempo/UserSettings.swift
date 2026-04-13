@@ -36,7 +36,10 @@ class UserSettings {
 
     // MARK: - Visuals
 
+    var edgeLineWidth: Double { didSet { save() } }
+    var edgeGlow: Bool { didSet { save() } }
     var invertBreakColors: Bool { didSet { save() } }
+    var showStreakDots: Bool { didSet { save() } }
 
     var focusColorChoice: ColorChoice { didSet { save() } }
     var breakColorChoice: ColorChoice { didSet { save() } }
@@ -59,6 +62,34 @@ class UserSettings {
 
     var focusColor: Color { focusColorChoice.color }
     var breakColor: Color { breakColorChoice.color }
+
+    // MARK: - Slot Customization
+
+    enum InfoSlotContent: String, CaseIterable, Identifiable, Codable {
+        case phaseLabel, cycleIndicator, streakCount, todayCount, none
+        var id: String { rawValue }
+
+        var displayName: String {
+            switch self {
+            case .phaseLabel:      return "phase"
+            case .cycleIndicator:  return "cycle"
+            case .streakCount:     return "streak"
+            case .todayCount:      return "today"
+            case .none:            return "none"
+            }
+        }
+    }
+
+    enum EdgeStyle: String, CaseIterable, Identifiable, Codable {
+        case thin, thick, none, pulse
+        var id: String { rawValue }
+        var displayName: String { rawValue }
+    }
+
+    var activeTopSlot: InfoSlotContent { didSet { save() } }
+    var activeBottomSlot: InfoSlotContent { didSet { save() } }
+    var activeEdgeStyle: EdgeStyle { didSet { save() } }
+    var idleStatsSlot: InfoSlotContent { didSet { save() } }
 
     // MARK: - Session Types
 
@@ -92,9 +123,16 @@ class UserSettings {
         phaseCompleteHaptics = defaults.object(forKey: "phaseCompleteHaptics") as? Bool ?? true
         sessionCompleteHaptics = defaults.object(forKey: "sessionCompleteHaptics") as? Bool ?? true
         cycleCompleteHaptics = defaults.object(forKey: "cycleCompleteHaptics") as? Bool ?? true
+        edgeLineWidth       = defaults.object(forKey: "edgeLineWidth") as? Double ?? 4
+        edgeGlow            = defaults.object(forKey: "edgeGlow") as? Bool ?? true
         invertBreakColors   = defaults.object(forKey: "invertBreakColors") as? Bool ?? true
+        showStreakDots      = defaults.object(forKey: "showStreakDots") as? Bool ?? true
         focusColorChoice    = ColorChoice(rawValue: defaults.string(forKey: "focusColor") ?? "white") ?? .white
         breakColorChoice    = ColorChoice(rawValue: defaults.string(forKey: "breakColor") ?? "cyan") ?? .cyan
+        activeTopSlot       = InfoSlotContent(rawValue: defaults.string(forKey: "activeTopSlot") ?? "phaseLabel") ?? .phaseLabel
+        activeBottomSlot    = InfoSlotContent(rawValue: defaults.string(forKey: "activeBottomSlot") ?? "streakCount") ?? .streakCount
+        activeEdgeStyle     = EdgeStyle(rawValue: defaults.string(forKey: "activeEdgeStyle") ?? "thick") ?? .thick
+        idleStatsSlot       = InfoSlotContent(rawValue: defaults.string(forKey: "idleStatsSlot") ?? "streakCount") ?? .streakCount
     }
 
     private func save() {
@@ -123,8 +161,15 @@ class UserSettings {
         defaults.set(phaseCompleteHaptics, forKey: "phaseCompleteHaptics")
         defaults.set(sessionCompleteHaptics, forKey: "sessionCompleteHaptics")
         defaults.set(cycleCompleteHaptics, forKey: "cycleCompleteHaptics")
+        defaults.set(edgeLineWidth, forKey: "edgeLineWidth")
+        defaults.set(edgeGlow, forKey: "edgeGlow")
         defaults.set(invertBreakColors, forKey: "invertBreakColors")
+        defaults.set(showStreakDots, forKey: "showStreakDots")
         defaults.set(focusColorChoice.rawValue, forKey: "focusColor")
         defaults.set(breakColorChoice.rawValue, forKey: "breakColor")
+        defaults.set(activeTopSlot.rawValue, forKey: "activeTopSlot")
+        defaults.set(activeBottomSlot.rawValue, forKey: "activeBottomSlot")
+        defaults.set(activeEdgeStyle.rawValue, forKey: "activeEdgeStyle")
+        defaults.set(idleStatsSlot.rawValue, forKey: "idleStatsSlot")
     }
 }

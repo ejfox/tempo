@@ -103,24 +103,9 @@ struct TimerTab: View {
             )
             .padding(.top, 24)
 
-            // Stats
-            if session.currentStreak > 0 || session.todayCount > 0 {
-                HStack(spacing: 20) {
-                    if session.currentStreak > 0 {
-                        Label("\(session.currentStreak)", systemImage: "flame")
-                    }
-                    Label("\(session.todayCount)", systemImage: "checkmark.circle")
-                }
-                .font(.system(size: 13, weight: .light, design: .monospaced))
-                .foregroundStyle(.tertiary)
+            // Idle stats — configurable
+            idleSlotContent
                 .padding(.top, 16)
-            }
-
-            CycleIndicator(
-                position: session.cyclePosition,
-                total: settings.pomodorosPerCycle
-            )
-            .padding(.top, 8)
 
             Spacer()
 
@@ -145,28 +130,22 @@ struct TimerTab: View {
         }
     }
 
+    @State private var pulseEdgeOpacity: Double = 1.0
+
     // MARK: - Active View
 
     private var activeView: some View {
         ZStack {
-            EdgeTraceProgress(
-                progress: session.progress,
-                color: edgeColor,
-                isPaused: session.isPaused,
-                lineWidth: 4,
-                showGlow: true
-            )
-            .animation(.linear(duration: 1), value: session.progress)
-            .ignoresSafeArea()
+            edgeView
+                .animation(.linear(duration: 1), value: session.progress)
+                .ignoresSafeArea()
 
             VStack(spacing: 0) {
                 Spacer()
 
                 VStack(spacing: 6) {
-                    Text(session.phaseLabel)
-                        .font(.system(size: 14, weight: .light, design: .monospaced))
-                        .foregroundStyle(labelColor)
-                        .contentTransition(.interpolate)
+                    // Top slot — configurable
+                    slotContent(for: settings.activeTopSlot, color: labelColor)
 
                     Text(session.formattedTime)
                         .font(.system(size: 64, weight: .ultraLight, design: .monospaced))
@@ -177,17 +156,9 @@ struct TimerTab: View {
                         .accessibilityLabel("\(Int(session.remainingTime / 60)) minutes \(Int(session.remainingTime) % 60) seconds remaining")
                         .accessibilityValue("\(Int(session.progress * 100)) percent complete")
 
-                    CycleIndicator(
-                        position: session.cyclePosition,
-                        total: settings.pomodorosPerCycle,
-                        color: textColor
-                    )
-                    .padding(.top, 4)
-
-                    if session.currentStreak > 0 {
-                        StreakDots(count: session.currentStreak, color: textColor)
-                            .padding(.top, 4)
-                    }
+                    // Bottom slot — configurable
+                    slotContent(for: settings.activeBottomSlot, color: textColor)
+                        .padding(.top, 4)
                 }
                 .onTapGesture {
                     if session.isBreakPending {
@@ -228,6 +199,87 @@ struct TimerTab: View {
             } else {
                 withAnimation(.easeInOut(duration: 0.2)) { pulseOpacity = 1.0 }
             }
+        }
+    }
+
+    // MARK: - Slot Content
+
+    @ViewBuilder
+    private func slotContent(for slot: UserSettings.InfoSlotContent, color: Color) -> some View {
+        switch slot {
+        case .phaseLabel:
+            Text(session.phaseLabel)
+                .font(.system(size: 14, weight: .light, design: .monospaced))
+                .foregroundStyle(color)
+                .contentTransition(.interpolate)
+        case .cycleIndicator:
+            CycleIndicator(position: session.cyclePosition, total: settings.pomodorosPerCycle, color: color)
+        case .streakCount:
+            if session.currentStreak > 0 && settings.showStreakDots {
+                StreakDots(count: session.currentStreak, color: color)
+            }
+        case .todayCount:
+            Label("\(session.todayCount)", systemImage: "checkmark.circle")
+                .font(.system(size: 13, weight: .light, design: .monospaced))
+                .foregroundStyle(color.opacity(0.7))
+        case .none:
+            EmptyView()
+        }
+    }
+
+    // MARK: - Edge Style
+
+    @ViewBuilder
+    private var edgeView: some View {
+        let progress = session.progress
+        let paused = session.isPaused
+        switch settings.activeEdgeStyle {
+        case .thin:
+            EdgeTraceProgress(progress: progress, color: edgeColor, isPaused: paused, lineWidth: 2, showGlow: false)
+        case .thick:
+            EdgeTraceProgress(progress: progress, color: edgeColor, isPaused: paused,
+                              lineWidth: CGFloat(settings.edgeLineWidth), showGlow: settings.edgeGlow)
+        case .none:
+            EmptyView()
+        case .pulse:
+            EdgeTraceProgress(progress: progress, color: edgeColor, isPaused: paused, lineWidth: 4, showGlow: true)
+                .opacity(pulseEdgeOpacity)
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                        pulseEdgeOpacity = 0.4
+                    }
+                }
+        }
+    }
+
+    // MARK: - Idle Slot
+
+    @ViewBuilder
+    private var idleSlotContent: some View {
+        switch settings.idleStatsSlot {
+        case .phaseLabel:
+            Text("ready")
+                .font(.system(size: 13, weight: .light, design: .monospaced))
+                .foregroundStyle(.tertiary)
+        case .cycleIndicator:
+            CycleIndicator(position: session.cyclePosition, total: settings.pomodorosPerCycle)
+        case .streakCount:
+            if session.currentStreak > 0 || session.todayCount > 0 {
+                HStack(spacing: 20) {
+                    if session.currentStreak > 0 {
+                        Label("\(session.currentStreak)", systemImage: "flame")
+                    }
+                    Label("\(session.todayCount)", systemImage: "checkmark.circle")
+                }
+                .font(.system(size: 13, weight: .light, design: .monospaced))
+                .foregroundStyle(.tertiary)
+            }
+        case .todayCount:
+            Label("\(session.todayCount) today", systemImage: "checkmark.circle")
+                .font(.system(size: 13, weight: .light, design: .monospaced))
+                .foregroundStyle(.tertiary)
+        case .none:
+            EmptyView()
         }
     }
 }

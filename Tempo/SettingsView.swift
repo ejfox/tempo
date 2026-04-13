@@ -55,9 +55,44 @@ struct SettingsTab: View {
                     }
                 }
 
+                // MARK: - Customize
+                Section("Customize") {
+                    Picker("Top info", selection: $s.activeTopSlot) {
+                        ForEach(UserSettings.InfoSlotContent.allCases) { slot in
+                            Text(slot.displayName).tag(slot)
+                        }
+                    }
+
+                    Picker("Bottom info", selection: $s.activeBottomSlot) {
+                        ForEach(UserSettings.InfoSlotContent.allCases) { slot in
+                            Text(slot.displayName).tag(slot)
+                        }
+                    }
+
+                    Picker("Edge style", selection: $s.activeEdgeStyle) {
+                        ForEach(UserSettings.EdgeStyle.allCases) { style in
+                            Text(style.displayName).tag(style)
+                        }
+                    }
+
+                    Picker("Idle stats", selection: $s.idleStatsSlot) {
+                        ForEach(UserSettings.InfoSlotContent.allCases) { slot in
+                            Text(slot.displayName).tag(slot)
+                        }
+                    }
+                }
+
                 // MARK: - Appearance
                 Section("Appearance") {
                     Toggle("Invert colors on break", isOn: $s.invertBreakColors)
+                    Toggle("Show streak dots", isOn: $s.showStreakDots)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Edge width: \(Int(s.edgeLineWidth))pt")
+                        Slider(value: $s.edgeLineWidth, in: 2...8, step: 1)
+                    }
+
+                    Toggle("Edge glow", isOn: $s.edgeGlow)
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Focus color")
