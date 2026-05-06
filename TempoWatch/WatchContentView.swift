@@ -74,7 +74,6 @@ struct DurationSelectorView: View {
 
     @State private var rawCrown: Double = 4.5
     @State private var selectedIndex: Int = 4
-    @State private var appeared = false
     @FocusState private var isFocused: Bool
 
     private let presets = WatchPomodoroSession.durationPresets
@@ -104,72 +103,52 @@ struct DurationSelectorView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack {
             ZStack {
-                InstrumentRing(
-                    progress: appeared ? selectedMinutes / 60.0 : 0,
-                    thickness: isAtDetent ? 4 : 3,
-                    color: .white.opacity(isAtDetent ? 0.2 : 0.15)
-                )
-                .animation(.spring(response: 0.5, dampingFraction: 0.7), value: selectedMinutes)
-                .animation(.easeInOut(duration: 0.2), value: isAtDetent)
+                Circle()
+                    .stroke(.white.opacity(0.1), lineWidth: 5)
 
-                TickMarks(count: 12, majorEvery: 3, radius: 68)
-                    .opacity(appeared ? 0.4 : 0)
+                Circle()
+                    .trim(from: 0, to: selectedMinutes / 60.0)
+                    .stroke(.white.opacity(0.35), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .animation(.spring(response: 0.5, dampingFraction: 0.7), value: selectedMinutes)
 
-                VStack(spacing: 4) {
+                VStack(spacing: 2) {
                     Text("\(Int(selectedMinutes))")
-                        .font(.system(size: 48, weight: isAtDetent ? .thin : .ultraLight, design: .rounded))
+                        .font(.system(.largeTitle, design: .rounded, weight: .medium))
                         .monospacedDigit()
                         .contentTransition(.numericText(value: selectedMinutes))
                         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: selectedMinutes)
-                        .scaleEffect(appeared ? 1 : 0.8)
-                        .opacity(appeared ? 1 : 0)
-
-                    Text("minutes")
-                        .font(.system(size: 11, weight: .light, design: .monospaced))
+                    Text("min")
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
-                        .opacity(appeared ? 0.7 : 0)
-
                     idleSlotContent
-                        .padding(.top, 4)
-                        .opacity(appeared ? 0.8 : 0)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .aspectRatio(1, contentMode: .fit)
 
-            HStack(spacing: 12) {
+            Button {
+                let type = WatchPomodoroSession.sessionType(
+                    forMinutes: selectedMinutes,
+                    breakRatio: settings.breakRatio
+                )
+                manager.startSession(type: type)
+            } label: {
+                Text("Begin")
+                    .frame(maxWidth: .infinity)
+            }
+            .tint(.white)
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
                 NavigationLink {
                     SettingsView()
                         .environment(settings)
                 } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.white.opacity(0.4))
-                        .frame(width: 36, height: 36)
-                        .background(.white.opacity(0.08), in: Circle())
+                    Label("Settings", systemImage: "gearshape")
                 }
-                .buttonStyle(.plain)
-
-                Button {
-                    let type = WatchPomodoroSession.sessionType(
-                        forMinutes: selectedMinutes,
-                        breakRatio: settings.breakRatio
-                    )
-                    manager.startSession(type: type)
-                } label: {
-                    Text("begin")
-                        .font(.system(size: 15, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.9))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(.white.opacity(0.1), in: Capsule())
-                }
-                .buttonStyle(.plain)
             }
-            .opacity(appeared ? 1 : 0)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 4)
         }
         .focusable()
         .focused($isFocused)
@@ -187,20 +166,16 @@ struct DurationSelectorView: View {
                 WatchHaptics.crownSnap.play()
             }
         }
-        .onAppear {
-            isFocused = true
-            withAnimation(.easeOut(duration: 0.6)) { appeared = true }
-        }
-        .onDisappear { appeared = false }
+        .onAppear { isFocused = true }
     }
 
     @ViewBuilder
     private var idleSlotContent: some View {
         switch settings.idleStatsSlot {
         case .phaseLabel:
-            Text("ready")
-                .font(.system(size: 10, weight: .light, design: .monospaced))
-                .foregroundStyle(.tertiary)
+            Text("Ready")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         case .cycleIndicator:
             CycleIndicator(position: manager.session.cyclePosition, total: settings.pomodorosPerCycle)
         case .streakCount:
@@ -209,13 +184,13 @@ struct DurationSelectorView: View {
                     Label("\(manager.session.currentStreak)", systemImage: "flame")
                     Label("\(manager.session.todayCount)", systemImage: "checkmark.circle")
                 }
-                .font(.system(size: 10, weight: .light, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             }
         case .todayCount:
             Label("\(manager.session.todayCount) today", systemImage: "checkmark.circle")
-                .font(.system(size: 10, weight: .light, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         case .none:
             EmptyView()
         }
@@ -263,33 +238,32 @@ struct ActiveSessionView: View {
                     .ignoresSafeArea()
             }
 
-            VStack(spacing: 0) {
+            VStack {
+                slotContent(for: settings.activeTopSlot, color: labelColor)
+
                 Spacer()
 
-                VStack(spacing: 3) {
-                    slotContent(for: settings.activeTopSlot, color: labelColor)
-
+                VStack(spacing: 4) {
                     Text(manager.session.formattedTime)
-                        .font(.system(size: 38, weight: .ultraLight, design: .monospaced))
+                        .font(.system(size: 44, weight: .light, design: .monospaced))
                         .monospacedDigit()
                         .foregroundStyle(textColor)
                         .contentTransition(.numericText(value: manager.session.remainingTime))
                         .opacity(manager.session.isPaused ? pulseOpacity : 1.0)
                         .scaleEffect(transitionTextScale)
                         .animation(.easeInOut(duration: 0.6), value: isBreak)
+                        .onTapGesture {
+                            if manager.session.isBreakPending {
+                                manager.startBreak()
+                            } else {
+                                manager.togglePause()
+                            }
+                        }
 
                     slotContent(for: settings.activeBottomSlot, color: textColor)
-                        .padding(.top, 2)
                 }
                 .scaleEffect(transitionScale)
                 .blur(radius: transitionBlur)
-                .onTapGesture {
-                    if manager.session.isBreakPending {
-                        manager.startBreak()
-                    } else {
-                        manager.togglePause()
-                    }
-                }
 
                 Spacer()
 
@@ -297,23 +271,18 @@ struct ActiveSessionView: View {
                     Button {
                         manager.startBreak()
                     } label: {
-                        Text("start break")
-                            .font(.system(size: 15, weight: .medium, design: .monospaced))
-                            .foregroundStyle(textColor.opacity(0.9))
+                        Text("Start Break")
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(textColor.opacity(0.1), in: Capsule())
                     }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 4)
+                    .tint(.green)
                 }
 
-                StopButton(isBreak: isBreak) { manager.stopSession() }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 4)
-                    .opacity(manager.phaseTransitioning ? 0 : 1)
-                    .animation(.easeInOut(duration: 0.2), value: manager.phaseTransitioning)
+                Button(role: .destructive) {
+                    manager.stopSession()
+                } label: {
+                    Text("Stop")
+                        .frame(maxWidth: .infinity)
+                }
             }
 
             if transitionFlash > 0 {

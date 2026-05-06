@@ -121,6 +121,7 @@ struct SettingsTab: View {
             }
             .navigationTitle("settings")
             .navigationBarTitleDisplayMode(.inline)
+            .tint(.orange)
         }
     }
 }

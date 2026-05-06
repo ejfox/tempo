@@ -63,7 +63,7 @@ struct InstrumentRing: View {
             .trim(from: 0, to: progress)
             .stroke(color, style: StrokeStyle(lineWidth: thickness, lineCap: .round))
             .rotationEffect(.degrees(-90))
-            .padding(12)
+            .padding(6)
     }
 }
 
@@ -96,24 +96,16 @@ struct StopButton: View {
     var isBreak: Bool = false
     let onStop: () -> Void
 
-    private var buttonBg: Color { isBreak ? .black.opacity(0.08) : .white.opacity(0.05) }
-    private var buttonFg: Color { isBreak ? .black.opacity(0.5) : .white.opacity(0.5) }
-
     var body: some View {
         if showConfirm {
-            Button {
+            Button(role: .destructive) {
                 dismissTask?.cancel()
                 onStop()
                 showConfirm = false
             } label: {
-                Text("confirm stop")
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.red.opacity(0.9))
+                Text("Confirm Stop")
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(.red.opacity(0.15), in: Capsule())
             }
-            .buttonStyle(.plain)
             .transition(.asymmetric(
                 insertion: .opacity.combined(with: .move(edge: .bottom)),
                 removal: .opacity
@@ -131,15 +123,10 @@ struct StopButton: View {
                     withAnimation { showConfirm = false }
                 }
             } label: {
-                Text("stop")
-                    .font(.system(size: 13, weight: .light, design: .monospaced))
-                    .foregroundStyle(buttonFg)
+                Text("Stop")
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(buttonBg, in: Capsule())
             }
-            .buttonStyle(.plain)
-            .animation(.easeInOut(duration: 0.6), value: isBreak)
+            .tint(.gray)
         }
     }
 }

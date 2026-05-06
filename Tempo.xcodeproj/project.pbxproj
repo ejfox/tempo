@@ -363,9 +363,6 @@
 			mainGroup = 479FC5B32E502F4A008EB439;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				471A84842E53D78000962DFE /* XCRemoteSwiftPackageReference "YapAnimator" */,
-				471A84852E53D99600962DFE /* XCRemoteSwiftPackageReference "Stellar" */,
-				471A84862E53D9B200962DFE /* XCRemoteSwiftPackageReference "ScreenCorners" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 479FC5BD2E502F4A008EB439 /* Products */;
@@ -954,32 +951,6 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		471A84842E53D78000962DFE /* XCRemoteSwiftPackageReference "YapAnimator" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/yapstudios/YapAnimator";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.2.0;
-			};
-		};
-		471A84852E53D99600962DFE /* XCRemoteSwiftPackageReference "Stellar" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/AugustRush/Stellar";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.67.0;
-			};
-		};
-		471A84862E53D9B200962DFE /* XCRemoteSwiftPackageReference "ScreenCorners" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/kylebshr/ScreenCorners.git";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
 	};
 	rootObject = 479FC5B42E502F4A008EB439 /* Project object */;
 }

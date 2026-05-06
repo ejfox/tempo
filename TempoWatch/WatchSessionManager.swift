@@ -11,7 +11,7 @@ import UserNotifications
 import WidgetKit
 
 @Observable
-class WatchSessionManager {
+class WatchSessionManager: NSObject {
     /// Shared instance for App Intents / Action Button access
     static let shared = WatchSessionManager()
 
@@ -35,7 +35,8 @@ class WatchSessionManager {
 
     // MARK: - Lifecycle
 
-    init() {
+    override init() {
+        super.init()
         setupSync()
         requestNotificationPermission()
     }
