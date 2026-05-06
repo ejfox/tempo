@@ -35,7 +35,6 @@ struct PersistenceController {
         session.sessionType = "short"
         session.isCompleted = false
         session.deviceID = "preview"
-        session.interruptionMode = "strict"
         
         do {
             try viewContext.save()
@@ -178,7 +177,6 @@ struct PersistenceController {
         session.sessionType = type == PomodoroSession.defaultShort ? "short" : "long"
         session.isCompleted = false
         session.deviceID = UIDevice.current.identifierForVendor?.uuidString
-        session.interruptionMode = "strict"
         session.lastSyncTime = Date()
         
         saveContext()
@@ -306,6 +304,5 @@ extension PomodoroSession {
             self.state = .idle
         }
         
-        self.interruptionMode = InterruptionMode(rawValue: coreDataSession.interruptionMode ?? "strict") ?? .strict
     }
 }

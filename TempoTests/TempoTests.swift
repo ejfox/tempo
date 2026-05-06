@@ -18,7 +18,6 @@ final class TempoTests: XCTestCase {
         XCTAssert(session.remainingTime == 0)
         XCTAssert(session.currentStreak == 0)
         XCTAssert(session.todayCount == 0)
-        XCTAssert(session.interruptionMode == .strict)
         XCTAssert(!session.isRunning)
         XCTAssert(!session.isInBreak)
     }
@@ -96,19 +95,6 @@ final class TempoTests: XCTestCase {
         
         session.remainingTime = 0
         XCTAssert(session.formattedTime == "00:00")
-    }
-    
-    func testinterruptionModeHandling() async throws {
-        let session = PomodoroSession()
-        
-        session.interruptionMode = .strict
-        XCTAssert(session.interruptionMode == .strict)
-        
-        session.interruptionMode = .flexible
-        XCTAssert(session.interruptionMode == .flexible)
-        
-        session.interruptionMode = .practice
-        XCTAssert(session.interruptionMode == .practice)
     }
     
     func testsessionCompletionFlow() async throws {

@@ -10,7 +10,6 @@
         <attribute name="sessionType" attributeType="String" defaultValueString="short"/>
         <attribute name="isCompleted" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
         <attribute name="deviceID" optional="YES" attributeType="String"/>
-        <attribute name="interruptionMode" attributeType="String" defaultValueString="strict"/>
         <attribute name="lastSyncTime" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
     <entity name="UserStats" representedClassName="UserStats" syncable="YES" codeGenerationType="class">
