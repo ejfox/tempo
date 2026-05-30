@@ -57,7 +57,8 @@ struct TempoWidgetDataReader {
 
         if let data = defaults.data(forKey: "widget.session"),
            let info = try? JSONDecoder().decode(WidgetSessionInfo.self, from: data),
-           info.isActive {
+           info.isActive,
+           Calendar.current.isDateInToday(info.lastUpdateTime) {
             let elapsed = date.timeIntervalSince(info.startTime)
             let remaining = max(0, info.totalDuration - elapsed)
             let progress = info.totalDuration > 0 ? min(1.0, elapsed / info.totalDuration) : 0
@@ -75,12 +76,19 @@ struct TempoWidgetDataReader {
             )
         }
 
+        // Only show todayCount if it was recorded today; otherwise it's stale
+        var todayCount = defaults.integer(forKey: "widget.todayCount")
+        if let savedDate = defaults.object(forKey: "widget.todayCountDate") as? Date,
+           !Calendar.current.isDateInToday(savedDate) {
+            todayCount = 0
+        }
+
         return TempoWidgetEntry(
             date: date, isActive: false, isInBreak: false,
             remainingTime: 0, totalDuration: 0, progress: 0,
             phaseLabel: "", formattedTime: "00:00",
             currentStreak: defaults.integer(forKey: "widget.streak"),
-            todayCount: defaults.integer(forKey: "widget.todayCount"),
+            todayCount: todayCount,
             cyclePosition: defaults.integer(forKey: "widget.cyclePosition"),
             pomodorosPerCycle: max(2, defaults.integer(forKey: "widget.pomodorosPerCycle"))
         )
@@ -115,7 +123,14 @@ struct TempoTimelineProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
         let entries = TempoWidgetDataReader.timeline()
-        let policy: TimelineReloadPolicy = entries.first?.isActive == true ? .atEnd : .never
+        let policy: TimelineReloadPolicy
+        if entries.first?.isActive == true {
+            policy = .atEnd
+        } else {
+            // Refresh at midnight so stale todayCount resets to 0
+            let midnight = Calendar.current.startOfDay(for: Date()).addingTimeInterval(86400)
+            policy = .after(midnight)
+        }
         completion(Timeline(entries: entries, policy: policy))
     }
 }

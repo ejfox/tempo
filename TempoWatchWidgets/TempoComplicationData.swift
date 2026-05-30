@@ -32,10 +32,11 @@ struct TempoComplicationData {
     static func entry(for date: Date = Date()) -> TempoTimelineEntry {
         guard let defaults = shared else { return .idle }
 
-        // Try to decode full session info
+        // Try to decode full session info (ignore stale data from a previous day)
         if let data = defaults.data(forKey: "widget.session"),
            let info = try? JSONDecoder().decode(WidgetSessionInfo.self, from: data),
-           info.isActive {
+           info.isActive,
+           Calendar.current.isDateInToday(info.lastUpdateTime) {
             // Recalculate remaining time from startTime for accuracy
             let elapsed = date.timeIntervalSince(info.startTime)
             let remaining = max(0, info.totalDuration - elapsed)
@@ -66,7 +67,12 @@ struct TempoComplicationData {
 
         // Idle — read individual stat keys
         let streak = defaults.integer(forKey: "widget.streak")
-        let today = defaults.integer(forKey: "widget.todayCount")
+        // Only show todayCount if it was recorded today; otherwise it's stale
+        var today = defaults.integer(forKey: "widget.todayCount")
+        if let savedDate = defaults.object(forKey: "widget.todayCountDate") as? Date,
+           !Calendar.current.isDateInToday(savedDate) {
+            today = 0
+        }
         let cycle = defaults.integer(forKey: "widget.cyclePosition")
         let perCycle = defaults.integer(forKey: "widget.pomodorosPerCycle").clamped(2, 4)
 

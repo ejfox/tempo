@@ -291,6 +291,7 @@ class SessionManager {
             let shared = PomodoroSession.sharedSuite
             shared.set(data, forKey: WidgetKey.session.rawValue)
             shared.set(currentSession.todayCount, forKey: WidgetKey.todayCount.rawValue)
+            shared.set(Date(), forKey: WidgetKey.todayCountDate.rawValue)
             shared.set(currentSession.currentStreak, forKey: WidgetKey.streak.rawValue)
             shared.set(currentSession.cyclePosition, forKey: WidgetKey.cyclePosition.rawValue)
             shared.set(userSettings.pomodorosPerCycle, forKey: WidgetKey.pomodorosPerCycle.rawValue)
@@ -370,6 +371,7 @@ struct TempoApp: App {
                 .environment(sessionManager)
                 .onAppear {
                     sessionManager.currentSession.resetDailyStatsIfNeeded()
+                    persistenceController.resetDailyStatsIfNeeded()
                 }
         }
     }

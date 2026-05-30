@@ -21,6 +21,7 @@ enum SessionKey: String {
 enum WidgetKey: String {
     case session          = "widget.session"
     case todayCount       = "widget.todayCount"
+    case todayCountDate   = "widget.todayCountDate"
     case streak           = "widget.streak"
     case cyclePosition    = "widget.cyclePosition"
     case pomodorosPerCycle = "widget.pomodorosPerCycle"

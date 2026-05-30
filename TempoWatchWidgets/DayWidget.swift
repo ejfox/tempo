@@ -27,7 +27,9 @@ struct DayTimelineProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
         let entry = TempoComplicationData.entry()
-        completion(Timeline(entries: [entry], policy: .never))
+        // Refresh at midnight so stale todayCount resets to 0
+        let midnight = Calendar.current.startOfDay(for: Date()).addingTimeInterval(86400)
+        completion(Timeline(entries: [entry], policy: .after(midnight)))
     }
 }
 

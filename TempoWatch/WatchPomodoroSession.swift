@@ -478,6 +478,11 @@ class WatchPomodoroSession {
             todayCount = 0
             cyclePosition = 0
             saveStats()
+            // Also reset widget keys so widgets don't show stale counts
+            let d = Self.sharedSuite
+            d.set(0, forKey: WidgetKey.todayCount.rawValue)
+            d.set(today, forKey: WidgetKey.todayCountDate.rawValue)
+            d.set(0, forKey: WidgetKey.cyclePosition.rawValue)
         }
     }
 }

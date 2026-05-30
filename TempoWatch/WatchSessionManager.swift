@@ -361,6 +361,7 @@ class WatchSessionManager: NSObject {
             let shared = WatchPomodoroSession.sharedSuite
             shared.set(data, forKey: WidgetKey.session.rawValue)
             shared.set(session.todayCount, forKey: WidgetKey.todayCount.rawValue)
+            shared.set(Date(), forKey: WidgetKey.todayCountDate.rawValue)
             shared.set(session.currentStreak, forKey: WidgetKey.streak.rawValue)
             shared.set(session.cyclePosition, forKey: WidgetKey.cyclePosition.rawValue)
             shared.set(settings?.pomodorosPerCycle ?? 4, forKey: WidgetKey.pomodorosPerCycle.rawValue)
